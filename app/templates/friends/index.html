@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Friends — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>
+  <li class="breadcrumb-item active">Friends</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1>Friends</h1>
+    <p class="lead mb-0">
+      {{ members | length }} friend{% if members | length != 1 %}s{% endif %} across your groups
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+.friends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.friend-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 12px;
+  padding: 1.25rem 1rem;
+  background: var(--bs-body-bg);
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+  transition: box-shadow .2s, transform .15s;
+}
+.friend-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.friend-avatar-lg {
+  width: 92px; height: 92px; border-radius: 50%;
+  background: var(--primary, #0f172a);
+  color: #fff; font-size: 1.7rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: .85rem; flex-shrink: 0;
+}
+.friend-name { font-weight: 700; font-size: .95rem; margin-bottom: .25rem; }
+.friend-meta { font-size: .75rem; color: var(--bs-secondary-color); margin-bottom: .85rem; }
+.friend-actions { display: flex; gap: .5rem; width: 100%; }
+.friend-actions .btn { flex: 1; font-size: .78rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if members %}
+<div class="friends-grid">
+  {% for friend in members %}
+  <div class="friend-card">
+    <div class="friend-avatar-lg"
+         style="{% if friend.avatar_art_crop %}padding:0;overflow:hidden{% endif %}">
+      {%- if friend.avatar_art_crop -%}
+      <img src="{{ friend.avatar_art_crop }}" alt="{{ friend.username }}"
+           style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">
+      {%- else -%}
+      {{ friend.get_initials() }}
+      {%- endif -%}
+    </div>
+    <div class="friend-name">{{ friend.username }}</div>
+    <div class="friend-meta">
+      <i class="bi bi-collection me-1"></i>{{ friend.box_count }} in Box
+      &nbsp;·&nbsp;
+      <i class="bi bi-layers me-1"></i>{{ friend.deck_count }} deck{% if friend.deck_count != 1 %}s{% endif %}
+    </div>
+    <div class="friend-actions">
+      <a href="{{ url_for('friends.friend_box', user_id=friend.id) }}"
+         class="btn btn-sm btn-primary">
+        <i class="bi bi-collection me-1"></i>View Box
+      </a>
+      <a href="{{ url_for('friends.friend_decks', user_id=friend.id) }}"
+         class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-layers me-1"></i>Decks
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center py-5">
+  <i class="bi bi-people" style="font-size:3rem;opacity:.25"></i>
+  <h5 class="mt-3 fw-semibold">No friends yet</h5>
+  <p class="text-muted">An admin needs to add you to a Friend Group to see other members here.</p>
+</div>
+{% endif %}
+
+{% endblock %}

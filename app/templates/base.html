@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en"
+      data-bs-theme="light"
+      data-theme="light"
+      data-user-theme="{{ current_user.theme if current_user.is_authenticated else 'light' }}"
+      data-ui-scale="{{ get_setting('ui_scale', '100%') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}{{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}</title>
+
+  {# ── Anti-FOUC: apply theme before CSS loads ── #}
+  <script>
+    (function(){
+      var t = localStorage.getItem("theme");
+      // Migrate old darkMode key
+      if (!t) { var old = localStorage.getItem("darkMode"); if (old === "true") t = "dark"; }
+      var pref = document.documentElement.dataset.userTheme || "light";
+      var theme = t || pref;
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.setAttribute("data-bs-theme", theme === "light" ? "light" : "dark");
+    })();
+  </script>
+
+  {# ── Bootstrap 5.3 ── #}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+        crossorigin="anonymous">
+  {# ── Bootstrap Icons ── #}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  {# ── VT323 terminal font ── #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+  {# ── Custom styles ── #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+
+  {# ── Dynamic colour tokens (override :root defaults in custom.css) ── #}
+  {% set nav_bg  = get_setting('primary_color',   '#0f172a') %}
+  {% set accent  = get_setting('secondary_color', '#2563eb') %}
+  <style>
+    :root {
+      --sidebar-bg:    {{ nav_bg }};
+      --primary:       {{ accent }};
+      --primary-hover: color-mix(in srgb, {{ accent }} 82%, #000);
+    }
+  </style>
+
+  <style>
+    /* ── Notification bell ─────────────────────────────── */
+    .notif-bell-wrapper { position: relative; }
+    .notif-badge {
+      position: absolute; top: 2px; right: 2px;
+      min-width: 16px; height: 16px;
+      background: var(--bs-danger, #dc3545); color: #fff;
+      border-radius: 8px; font-size: .62rem; font-weight: 700;
+      line-height: 16px; text-align: center; padding: 0 3px;
+      pointer-events: none;
+    }
+    .notif-panel {
+      position: absolute; top: calc(100% + 6px); right: 0;
+      width: 300px;
+      background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.18);
+      z-index: 1055; overflow: hidden;
+    }
+    .notif-panel-header {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: .45rem .65rem;
+      border-bottom: 1px solid var(--bs-border-color);
+    }
+    .notif-list { max-height: 300px; overflow-y: auto; }
+    .notif-item {
+      display: flex; gap: .45rem; align-items: flex-start;
+      padding: .45rem .65rem;
+      border-bottom: 1px solid var(--bs-border-color-translucent);
+      font-size: .8rem; line-height: 1.35;
+    }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item.unread { background: rgba(var(--bs-primary-rgb, 37,99,235), .07); }
+    .notif-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--primary, #2563eb);
+      margin-top: 4px; flex-shrink: 0;
+    }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-time { font-size: .7rem; color: var(--bs-secondary-color); margin-top: 2px; }
+    .notif-empty {
+      padding: 1.1rem .65rem; text-align: center;
+      color: var(--bs-secondary-color); font-size: .82rem;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+{# ── Mobile sidebar overlay ── #}
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+{# ════════════════════════════════════════════════════════
+   SIDEBAR
+   ════════════════════════════════════════════════════════ #}
+<nav class="sidebar" id="sidebar" aria-label="Main navigation">
+
+  {# Brand #}
+  <a href="{{ url_for('main.dashboard') }}" class="sidebar-brand">
+    <img src="{{ url_for('static', filename='images/HelpfulDjinnMd.png') }}"
+         class="sidebar-logo"
+         alt="{{ get_setting('app_name', 'MagicDjinn') }}">
+    <span>{{ get_setting('app_name', 'MagicDjinn') }}</span>
+  </a>
+
+  <div class="sidebar-nav">
+    {# ── Main section ── #}
+    <ul class="nav flex-column mb-0">
+      <li class="nav-item">
+        <a href="{{ url_for('main.dashboard') }}"
+           class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+          <i class="bi bi-speedometer2"></i>
+          <span>Dashboard</span>
+        </a>
+      </li>
+
+      {# MTG module nav items — appear automatically as blueprints are registered #}
+      {% for item in sidebar_nav() %}
+      <li class="nav-item">
+        <a href="{{ item.url }}"
+           class="nav-link {% if active_page == item.key %}active{% endif %}">
+          <i class="bi {{ item.icon }}"></i>
+          <span>{{ item.label }}</span>
+        </a>
+      </li>
+      {% endfor %}
+
+    </ul>
+
+    {# ── Admin section ── #}
+    {% if current_user.is_authenticated and (current_user.is_admin or current_user.has_permission('admin.full_access')) %}
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section-label">Administration</div>
+    <ul class="nav flex-column mb-0">
+      {% for item in admin_nav() %}
+      <li class="nav-item">
+        <a href="{{ item.url }}"
+           class="nav-link {% if active_page == item.key %}active{% endif %}">
+          <i class="bi {{ item.icon }}"></i>
+          <span>{{ item.label }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>{# /sidebar-nav #}
+
+  {# Logout #}
+  <div class="sidebar-footer">
+    {% if current_user.is_authenticated %}
+    <a href="{{ url_for('auth.logout') }}" class="nav-link">
+      <i class="bi bi-box-arrow-right"></i>
+      <span>Logout</span>
+    </a>
+    {% endif %}
+  </div>
+
+</nav>{# /sidebar #}
+
+
+{# ════════════════════════════════════════════════════════
+   MAIN WRAPPER
+   ════════════════════════════════════════════════════════ #}
+<div class="main-wrapper" id="main-wrapper">
+
+  {# ── Top Navbar ── #}
+  <header class="main-navbar" role="banner">
+
+    {# Sidebar toggle button #}
+    <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar">
+      <i class="bi bi-list fs-5"></i>
+    </button>
+
+    {# Breadcrumb slot #}
+    <nav aria-label="breadcrumb" class="d-none d-md-block">
+      {% block breadcrumb %}{% endblock %}
+    </nav>
+
+    <div class="ms-auto d-flex align-items-center gap-2">
+
+      {# Notification bell #}
+      {% if current_user.is_authenticated %}
+      <div class="notif-bell-wrapper">
+        <button id="notif-bell-btn" type="button" class="btn btn-sm btn-ghost"
+                aria-label="Notifications" title="Notifications">
+          <i class="bi bi-bell-fill"></i>
+          <span id="notif-badge" class="notif-badge" style="display:none"></span>
+        </button>
+        <div id="notif-panel" class="notif-panel" style="display:none">
+          <div class="notif-panel-header">
+            <span class="fw-semibold" style="font-size:.85rem">Notifications</span>
+            <button id="notif-mark-btn" type="button" class="btn btn-sm btn-ghost"
+                    style="font-size:.75rem;padding:.15rem .4rem">Mark all read</button>
+          </div>
+          <div id="notif-list" class="notif-list">
+            <div class="notif-empty">No notifications yet</div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# User settings button – opens modal #}
+      {% if current_user.is_authenticated %}
+      <button id="user-settings-trigger"
+              class="btn btn-sm d-flex align-items-center gap-2 btn-ghost"
+              type="button" title="Account settings" aria-label="Account settings">
+        <div class="user-avatar" data-initials="{{ current_user.get_initials() }}"
+             style="{% if current_user.avatar_art_crop %}padding:0;overflow:hidden{% endif %}">
+          {%- if current_user.avatar_art_crop -%}
+          <img src="{{ current_user.avatar_art_crop }}" alt=""
+               style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block">
+          {%- else -%}
+          {{ current_user.get_initials() }}
+          {%- endif -%}
+        </div>
+        <span class="d-none d-lg-inline fw-semibold" style="font-size:.85rem">{{ current_user.username }}</span>
+        <i class="bi bi-chevron-down" style="font-size:.65rem; opacity:.6"></i>
+      </button>
+      {% endif %}
+
+    </div>
+  </header>{# /navbar #}
+
+  {# ── Page content ── #}
+  <main class="main-content" role="main">
+
+    {# Flash messages #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+      {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        <i class="bi {% if category == 'success' %}bi-check-circle-fill{% elif category == 'danger' %}bi-exclamation-triangle-fill{% elif category == 'warning' %}bi-exclamation-circle-fill{% else %}bi-info-circle-fill{% endif %} me-2"></i>
+        {{ message | safe }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {# Page header slot #}
+    {% block page_header %}{% endblock %}
+
+    {# Main content slot #}
+    {% block content %}{% endblock %}
+
+  </main>
+
+  {# Footer #}
+  <footer class="main-footer">
+    {{ get_setting('footer_text', 'MagicDjinn — Built with Flask') }}
+  </footer>
+
+</div>{# /main-wrapper #}
+
+{# ════════════════════════════════════════════════════════
+   USER SETTINGS DIALOG  (native <dialog>, no Bootstrap JS needed)
+   ════════════════════════════════════════════════════════ #}
+{% if current_user.is_authenticated %}
+<dialog id="userSettingsModal" aria-label="Account settings">
+
+  {# ── Header ── #}
+  <div class="usm-header">
+    <div class="d-flex align-items-center gap-3">
+      <div class="user-avatar flex-shrink-0" id="usm-header-avatar"
+           data-initials="{{ current_user.get_initials() }}"
+           style="width:48px;height:48px;font-size:1.1rem;border-radius:50%;{% if current_user.avatar_art_crop %}padding:0;overflow:hidden{% endif %}">
+        {%- if current_user.avatar_art_crop -%}
+        <img src="{{ current_user.avatar_art_crop }}" alt=""
+             style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">
+        {%- else -%}
+        {{ current_user.get_initials() }}
+        {%- endif -%}
+      </div>
+      <div>
+        <div class="fw-bold lh-1 mb-1">{{ current_user.username }}</div>
+        <div class="text-muted" style="font-size:.78rem">{{ current_user.email }}</div>
+        <div class="mt-1 d-flex gap-1 flex-wrap">
+          {% if current_user.is_admin %}
+          <span class="badge bg-primary" style="font-size:.62rem">Admin</span>
+          {% endif %}
+          {% if current_user.role %}
+          <span class="badge bg-secondary" style="font-size:.62rem">{{ current_user.role.name }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <button type="button" class="modal-close usm-close-btn" aria-label="Close">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
+  {# ── Body ── #}
+  <div class="usm-body">
+
+    <p class="modal-section-label">Appearance</p>
+    <div class="row g-2 mb-1">
+      <div class="col-4">
+        <div class="theme-preview-tile tile-light" data-theme-val="light"
+             role="button" tabindex="0" aria-label="Light theme">
+          <div class="tile-preview"></div>
+          <div class="tile-label">Light</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="theme-preview-tile tile-dark" data-theme-val="dark"
+             role="button" tabindex="0" aria-label="Dark theme">
+          <div class="tile-preview"></div>
+          <div class="tile-label">Dark</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="theme-preview-tile tile-terminal" data-theme-val="terminal"
+             role="button" tabindex="0" aria-label="Terminal theme">
+          <div class="tile-preview"></div>
+          <div class="tile-label">Terminal</div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    <p class="modal-section-label">Profile Image</p>
+
+    {# Current avatar preview + remove #}
+    <div class="d-flex align-items-center gap-3 mb-2">
+      <div id="avatar-preview" data-initials="{{ current_user.get_initials() }}"
+           style="width:52px;height:52px;border-radius:50%;background:var(--primary,#0f172a);color:#fff;
+                  font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;
+                  flex-shrink:0;overflow:hidden;{% if current_user.avatar_art_crop %}padding:0{% endif %}">
+        {%- if current_user.avatar_art_crop -%}
+        <img id="avatar-preview-img" src="{{ current_user.avatar_art_crop }}" alt=""
+             style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">
+        {%- else -%}
+        {{ current_user.get_initials() }}
+        {%- endif -%}
+      </div>
+      <div>
+        <div id="avatar-label" style="font-size:.78rem;font-weight:600">
+          {% if current_user.avatar_art_crop %}Card art selected{% else %}No image set{% endif %}
+        </div>
+        <button id="avatar-remove-btn" type="button"
+                class="btn btn-outline-danger mt-1"
+                style="font-size:.7rem;padding:.18rem .5rem;{% if not current_user.avatar_art_crop %}display:none{% endif %}">
+          Remove image
+        </button>
+      </div>
+    </div>
+
+    <div class="mb-1">
+      <input type="search" id="avatar-search-input" class="form-control form-control-sm"
+             placeholder="Search a card (e.g. Black Lotus, Serra Angel…)" autocomplete="off">
+    </div>
+    <div id="avatar-search-status" style="font-size:.72rem;color:var(--bs-secondary-color);min-height:1.1em;margin-bottom:.3rem"></div>
+    <div id="avatar-results-wrap" style="display:none;max-height:190px;overflow-y:auto;
+         border:1px solid var(--bs-border-color);border-radius:8px;padding:.4rem">
+      <div id="avatar-results-grid"
+           style="display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:.4rem"></div>
+    </div>
+
+    <hr class="my-3">
+
+    <p class="modal-section-label">Change Password</p>
+    <div id="pw-alert" style="display:none" class="mb-2"></div>
+    <div class="mb-2">
+      <input type="password" id="modal-current-pw" class="form-control form-control-sm"
+             placeholder="Current password" autocomplete="current-password">
+    </div>
+    <div class="mb-2">
+      <input type="password" id="modal-new-pw" class="form-control form-control-sm"
+             placeholder="New password (min 8 chars)" autocomplete="new-password">
+    </div>
+    <div class="mb-3">
+      <input type="password" id="modal-confirm-pw" class="form-control form-control-sm"
+             placeholder="Confirm new password" autocomplete="new-password">
+    </div>
+    <button type="button" id="modal-pw-btn" class="btn btn-primary btn-sm w-100">
+      Update Password
+    </button>
+
+  </div>
+
+  {# ── Footer ── #}
+  <div class="usm-footer">
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm me-auto">
+      <i class="bi bi-box-arrow-right me-1"></i>Sign Out
+    </a>
+    <button type="button" class="modal-close btn btn-sm btn-secondary">Close</button>
+  </div>
+
+</dialog>
+{% endif %}
+
+{# ── Scripts ── #}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmZ7r1zy1U4mEdFvXb0HhpVJp0i5"
+        crossorigin="anonymous"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script>
+(function () {
+  var dlg     = document.getElementById("userSettingsModal");
+  var trigger = document.getElementById("user-settings-trigger");
+  if (!dlg || !trigger) return;
+
+  /* ── Open / close ── */
+  function openDlg() {
+    refreshTiles();
+    dlg.showModal();
+  }
+  function closeDlg() { dlg.close(); }
+
+  trigger.addEventListener("click", openDlg);
+
+  /* Close buttons (class="modal-close") */
+  dlg.querySelectorAll(".modal-close").forEach(function (btn) {
+    btn.addEventListener("click", closeDlg);
+  });
+
+  /* Click on the ::backdrop closes the dialog */
+  dlg.addEventListener("click", function (e) {
+    var rect = dlg.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top  || e.clientY > rect.bottom) {
+      closeDlg();
+    }
+  });
+
+  /* ── Sync theme tiles on open ── */
+  function refreshTiles() {
+    var cur = document.documentElement.getAttribute("data-theme") || "light";
+    dlg.querySelectorAll(".theme-preview-tile").forEach(function (t) {
+      t.classList.toggle("active", t.dataset.themeVal === cur);
+    });
+  }
+
+  /* ── Theme tile clicks ── */
+  dlg.querySelectorAll(".theme-preview-tile").forEach(function (tile) {
+    tile.addEventListener("click", function () {
+      if (typeof window.applyTheme === "function") window.applyTheme(tile.dataset.themeVal);
+      dlg.querySelectorAll(".theme-preview-tile").forEach(function (t) { t.classList.remove("active"); });
+      tile.classList.add("active");
+    });
+    tile.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tile.click(); }
+    });
+  });
+
+  /* ── Password change ── */
+  var pwBtn   = document.getElementById("modal-pw-btn");
+  var pwAlert = document.getElementById("pw-alert");
+
+  function showAlert(msg, type) {
+    pwAlert.innerHTML = '<div class="alert alert-' + type + ' py-2 mb-0" style="font-size:.82rem">' + msg + '</div>';
+    pwAlert.style.display = "block";
+  }
+
+  pwBtn.addEventListener("click", function () {
+    var cur  = document.getElementById("modal-current-pw").value.trim();
+    var nw   = document.getElementById("modal-new-pw").value;
+    var conf = document.getElementById("modal-confirm-pw").value;
+    pwAlert.style.display = "none";
+
+    if (!cur || !nw || !conf) { showAlert("All fields are required.", "danger"); return; }
+    if (nw.length < 8)        { showAlert("New password must be at least 8 characters.", "danger"); return; }
+    if (nw !== conf)          { showAlert("Passwords do not match.", "danger"); return; }
+
+    pwBtn.disabled = true;
+    pwBtn.textContent = "Updating\u2026";
+
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var csrf = csrfMeta ? csrfMeta.getAttribute("content") : "";
+
+    fetch("/api/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ current_password: cur, new_password: nw, confirm_password: conf }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.success) {
+        showAlert("Password updated successfully!", "success");
+        document.getElementById("modal-current-pw").value = "";
+        document.getElementById("modal-new-pw").value = "";
+        document.getElementById("modal-confirm-pw").value = "";
+      } else {
+        showAlert(data.error || "An error occurred.", "danger");
+      }
+    })
+    .catch(function () { showAlert("Network error. Please try again.", "danger"); })
+    .finally(function () { pwBtn.disabled = false; pwBtn.textContent = "Update Password"; });
+  });
+
+  /* ── Clear form when dialog closes ── */
+  dlg.addEventListener("close", function () {
+    ["modal-current-pw", "modal-new-pw", "modal-confirm-pw"].forEach(function (id) {
+      var el = document.getElementById(id); if (el) el.value = "";
+    });
+    pwAlert.style.display = "none";
+    /* Reset avatar search state */
+    var si = document.getElementById("avatar-search-input");
+    if (si) { si.value = ""; }
+    var rw = document.getElementById("avatar-results-wrap");
+    if (rw) rw.style.display = "none";
+    var st = document.getElementById("avatar-search-status");
+    if (st) st.textContent = "";
+  });
+
+  /* ── Profile Image / Avatar ── */
+  var avatarInput   = document.getElementById("avatar-search-input");
+  var avatarStatus  = document.getElementById("avatar-search-status");
+  var avatarWrap    = document.getElementById("avatar-results-wrap");
+  var avatarGrid    = document.getElementById("avatar-results-grid");
+  var avatarPreview = document.getElementById("avatar-preview");
+  var avatarLabel   = document.getElementById("avatar-label");
+  var avatarRemove  = document.getElementById("avatar-remove-btn");
+  var _avatarTimer  = null;
+
+  /* Update every .user-avatar[data-initials] on the page to show/hide image */
+  function _syncAllAvatars(imgUrl) {
+    document.querySelectorAll(".user-avatar[data-initials]").forEach(function (el) {
+      if (imgUrl) {
+        el.style.padding  = "0";
+        el.style.overflow = "hidden";
+        el.innerHTML = '<img src="' + imgUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block">';
+      } else {
+        el.style.padding  = "";
+        el.style.overflow = "";
+        el.textContent    = el.dataset.initials;
+      }
+    });
+    /* Also sync the large modal-header avatar (id="usm-header-avatar") */
+    var ha = document.getElementById("usm-header-avatar");
+    if (ha) {
+      if (imgUrl) {
+        ha.style.padding  = "0";
+        ha.style.overflow = "hidden";
+        ha.innerHTML = '<img src="' + imgUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">';
+      } else {
+        ha.style.padding  = "";
+        ha.style.overflow = "";
+        ha.textContent    = ha.dataset.initials;
+      }
+    }
+    /* Sync the in-modal preview */
+    if (avatarPreview) {
+      if (imgUrl) {
+        avatarPreview.style.padding  = "0";
+        avatarPreview.innerHTML = '<img src="' + imgUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">';
+      } else {
+        avatarPreview.style.padding = "";
+        avatarPreview.textContent   = avatarPreview.dataset.initials;
+      }
+    }
+    if (avatarLabel)  avatarLabel.textContent = imgUrl ? "Card art selected" : "No image set";
+    if (avatarRemove) avatarRemove.style.display = imgUrl ? "" : "none";
+  }
+
+  function _saveAvatar(url) {
+    var _tok = document.querySelector('meta[name="csrf-token"]');
+    _tok = _tok ? _tok.getAttribute("content") : "";
+    fetch("/api/profile/avatar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": _tok },
+      body: JSON.stringify({ art_crop_url: url }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.success) {
+        _syncAllAvatars(url || null);
+        if (avatarStatus) avatarStatus.textContent = url ? "Saved!" : "";
+        if (avatarWrap && !url) avatarWrap.style.display = "none";
+      } else {
+        if (avatarStatus) avatarStatus.textContent = data.error || "Failed to save.";
+      }
+    })
+    .catch(function () {
+      if (avatarStatus) avatarStatus.textContent = "Network error.";
+    });
+  }
+
+  function _renderAvatarResults(cards) {
+    if (!cards.length) {
+      avatarStatus.textContent  = "No results.";
+      avatarWrap.style.display  = "none";
+      return;
+    }
+    avatarStatus.textContent = "Click an image to use it as your avatar.";
+    avatarGrid.innerHTML = cards.map(function (c) {
+      return '<div style="cursor:pointer;border-radius:6px;overflow:hidden;aspect-ratio:1;border:2px solid transparent;transition:border-color .15s" '
+           + 'class="avatar-result-tile" data-url="' + c.art_crop + '" title="' + c.name + ' (' + c.set_code + ')">'
+           + '<img src="' + c.art_crop + '" alt="' + c.name + '" loading="lazy" '
+           + 'style="width:100%;height:100%;object-fit:cover;display:block"></div>';
+    }).join("");
+    avatarGrid.querySelectorAll(".avatar-result-tile").forEach(function (tile) {
+      tile.addEventListener("mouseenter", function () { tile.style.borderColor = "var(--primary)"; });
+      tile.addEventListener("mouseleave", function () { tile.style.borderColor = "transparent"; });
+      tile.addEventListener("click", function () {
+        _saveAvatar(tile.dataset.url);
+        avatarWrap.style.display = "none";
+        avatarInput.value        = "";
+        avatarStatus.textContent = "";
+      });
+    });
+    avatarWrap.style.display = "";
+  }
+
+  if (avatarInput) {
+    avatarInput.addEventListener("input", function () {
+      clearTimeout(_avatarTimer);
+      var q = avatarInput.value.trim();
+      if (q.length < 2) {
+        avatarWrap.style.display = "none";
+        avatarStatus.textContent = "";
+        return;
+      }
+      avatarStatus.textContent = "Searching…";
+      _avatarTimer = setTimeout(function () {
+        fetch("/api/profile/avatar/search?q=" + encodeURIComponent(q))
+          .then(function (r) { return r.json(); })
+          .then(_renderAvatarResults)
+          .catch(function () { avatarStatus.textContent = "Search failed."; });
+      }, 380);
+    });
+  }
+
+  if (avatarRemove) {
+    avatarRemove.addEventListener("click", function () { _saveAvatar(""); });
+  }
+})();
+</script>
+{% block scripts %}{% endblock %}
+<script>
+/* ── Notification bell ──────────────────────────────────────────────────────── */
+(function () {
+  var wrapper  = document.querySelector('.notif-bell-wrapper');
+  var bellBtn  = document.getElementById('notif-bell-btn');
+  var badge    = document.getElementById('notif-badge');
+  var panel    = document.getElementById('notif-panel');
+  var list     = document.getElementById('notif-list');
+  var markBtn  = document.getElementById('notif-mark-btn');
+  if (!bellBtn) return;
+
+  var _open  = false;
+  var csrfEl = document.querySelector('meta[name="csrf-token"]');
+  function _csrf() { return csrfEl ? csrfEl.getAttribute('content') : ''; }
+
+  function _esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function _updateBadge(n) {
+    if (n > 0) {
+      badge.textContent = n > 99 ? '99+' : n;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function _renderList(notifs) {
+    if (!notifs || !notifs.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+      return;
+    }
+    list.innerHTML = notifs.map(function (n) {
+      var d = new Date(n.created_at);
+      var time = d.toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+      return '<div class="notif-item' + (n.is_read ? '' : ' unread') + '">'
+           + (n.is_read ? '' : '<div class="notif-dot"></div>')
+           + '<div class="notif-body">'
+           + '<div>' + _esc(n.message) + '</div>'
+           + '<div class="notif-time">' + time + '</div>'
+           + '</div></div>';
+    }).join('');
+  }
+
+  function _fetch(cb) {
+    fetch('/api/notifications')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        _updateBadge(data.unread || 0);
+        if (cb) cb(data);
+      })
+      .catch(function () {});
+  }
+
+  function _markRead() {
+    fetch('/api/notifications/mark-read', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': _csrf() },
+    })
+    .then(function () {
+      _fetch(function (data) { _renderList(data.notifications); });
+    })
+    .catch(function () {});
+  }
+
+  function _openPanel() {
+    _open = true;
+    panel.style.display = '';
+    _fetch(function (data) {
+      _renderList(data.notifications);
+      if ((data.unread || 0) > 0) _markRead();
+    });
+  }
+
+  function _closePanel() {
+    _open = false;
+    panel.style.display = 'none';
+  }
+
+  bellBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    _open ? _closePanel() : _openPanel();
+  });
+
+  markBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    _markRead();
+  });
+
+  /* Click outside closes the panel */
+  document.addEventListener('click', function (e) {
+    if (_open && wrapper && !wrapper.contains(e.target)) {
+      _closePanel();
+    }
+  });
+
+  /* Initial fetch + poll every 30 s */
+  _fetch(null);
+  setInterval(function () { if (!_open) _fetch(null); }, 30000);
+})();
+</script>
+<script>
+/* ── Global: convert {W}{U}{R} mana notation to Scryfall SVG images ───────── */
+window.renderMana = function (str) {
+  if (!str) return '';
+  /* Escape HTML entities first so oracle text is XSS-safe */
+  var safe = str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  /* Replace every {SYMBOL} with an <img> */
+  return safe.replace(/\{([^}]+)\}/g, function (_, sym) {
+    var code = sym.toUpperCase();
+    return '<img src="https://svgs.scryfall.io/card-symbols/' + code + '.svg"'
+         + ' alt="{' + sym + '}" class="mana-sym" decoding="async" loading="lazy">';
+  });
+};
+</script>
+
+</body>
+</html>

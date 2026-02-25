@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-journal-text me-2 text-primary"></i>Audit Log</h1>
+    <p class="lead">{{ logs.total }} event{{ 's' if logs.total != 1 }} recorded</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th style="width:60px">#</th>
+          <th>Action</th>
+          <th>Resource</th>
+          <th>User</th>
+          <th>IP Address</th>
+          <th>Details</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs.items %}
+        <tr>
+          <td class="text-muted font-monospace" style="font-size:.75rem">{{ log.id }}</td>
+          <td>
+            <span class="badge
+              {% if log.action in ('login','created','activated') %}bg-success
+              {% elif log.action in ('deleted','login_failed','deactivated') %}bg-danger
+              {% elif log.action == 'logout' %}bg-secondary
+              {% elif log.action == 'updated' %}bg-primary
+              {% else %}bg-info{% endif %} bg-opacity-80">
+              {{ log.action }}
+            </span>
+          </td>
+          <td style="font-size:.82rem">
+            {% if log.resource %}
+            <span class="badge bg-light text-dark border" style="font-size:.72rem">{{ log.resource }}</span>
+            {% if log.resource_id %}<span class="text-muted ms-1" style="font-size:.75rem">#{{ log.resource_id }}</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td style="font-size:.82rem">
+            {% if log.user %}
+            <div class="d-flex align-items-center gap-1">
+              <div class="user-avatar" style="width:20px;height:20px;font-size:.55rem">{{ log.user.get_initials() }}</div>
+              {{ log.user.username }}
+            </div>
+            {% else %}<span class="text-muted">system</span>{% endif %}
+          </td>
+          <td class="font-monospace text-muted" style="font-size:.78rem">{{ log.ip_address or '—' }}</td>
+          <td class="text-muted text-truncate-cell" style="font-size:.78rem" title="{{ log.details }}">
+            {{ log.details or '—' }}
+          </td>
+          <td class="text-nowrap" style="font-size:.78rem">
+            <span class="text-muted">{{ log.created_at.strftime('%Y-%m-%d') }}</span>
+            <span class="ms-1">{{ log.created_at.strftime('%H:%M:%S') }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="empty-state">
+            <i class="bi bi-journal-x"></i>No audit events yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Pagination #}
+  {% if logs.pages > 1 %}
+  <div class="card-footer d-flex justify-content-between align-items-center py-2">
+    <small class="text-muted">
+      Page {{ logs.page }} of {{ logs.pages }} ({{ logs.total }} events)
+    </small>
+    <nav>
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if not logs.has_prev }}">
+          <a class="page-link" href="{{ url_for('admin.audit', page=logs.prev_num) }}">‹ Prev</a>
+        </li>
+        {% for p in logs.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+          {% if p %}
+          <li class="page-item {{ 'active' if p == logs.page }}">
+            <a class="page-link" href="{{ url_for('admin.audit', page=p) }}">{{ p }}</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if not logs.has_next }}">
+          <a class="page-link" href="{{ url_for('admin.audit', page=logs.next_num) }}">Next ›</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}{{ friend.username }}'s Decks — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>
+  <li class="breadcrumb-item"><a href="{{ url_for('friends.index') }}">Friends</a></li>
+  <li class="breadcrumb-item">
+    <a href="{{ url_for('friends.friend_box', user_id=friend.id) }}">{{ friend.username }}</a>
+  </li>
+  <li class="breadcrumb-item active">Decks</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h1><i class="bi bi-layers me-2 text-primary"></i>{{ friend.username }}'s Decks</h1>
+    <p class="lead mb-0">
+      {{ decks | length }} public deck{% if decks | length != 1 %}s{% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('friends.friend_box', user_id=friend.id) }}" class="btn btn-outline-secondary">
+      <i class="bi bi-collection me-1"></i>View Box
+    </a>
+    <a href="{{ url_for('friends.index') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+.fmt-Commander { background:#7c3aed;color:#fff }
+.fmt-Standard  { background:#2563eb;color:#fff }
+.fmt-Pioneer   { background:#0891b2;color:#fff }
+.fmt-Modern    { background:#d97706;color:#fff }
+.fmt-Legacy    { background:#dc2626;color:#fff }
+.fmt-Vintage   { background:#854d0e;color:#fff }
+.fmt-Pauper    { background:#16a34a;color:#fff }
+.fmt-Casual    { background:#6b7280;color:#fff }
+.fmt-Other     { background:#6b7280;color:#fff }
+
+.color-pip {
+  display:inline-block; width:13px; height:13px;
+  border-radius:50%; border:1px solid rgba(0,0,0,.25); flex-shrink:0;
+}
+.pip-W{background:#f9faf4} .pip-U{background:#0e68ab} .pip-B{background:#211c20}
+.pip-R{background:#d42126} .pip-G{background:#00773c}
+
+.deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.deck-card {
+  display:flex; flex-direction:column;
+  border:1px solid var(--bs-border-color); border-radius:10px; overflow:hidden;
+  background:var(--bs-body-bg);
+  transition: box-shadow .2s, transform .15s;
+  cursor: pointer; text-decoration:none; color:inherit;
+}
+.deck-card:hover { box-shadow:0 8px 24px rgba(0,0,0,.18); transform:translateY(-3px); }
+.deck-cover-banner {
+  height:130px; overflow:hidden; position:relative;
+  background:var(--bs-tertiary-bg);
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0;
+}
+.deck-cover-banner img { width:100%; height:100%; object-fit:cover; object-position:center 20%; display:block; }
+.deck-cover-ph { font-size:2.6rem; color:var(--bs-secondary-color); opacity:.25; }
+.deck-card-header {
+  padding:.75rem 1rem .55rem;
+  border-bottom:1px solid var(--bs-border-color);
+  background:var(--bs-tertiary-bg);
+}
+.deck-card-name { font-size:1rem; font-weight:700; line-height:1.2; }
+.deck-card-body  { padding:.7rem 1rem; flex:1; }
+.deck-card-footer {
+  padding:.55rem 1rem;
+  border-top:1px solid var(--bs-border-color);
+  display:flex; align-items:center; gap:.5rem;
+}
+.deck-stat { display:flex; align-items:center; gap:.35rem; font-size:.82rem; }
+
+/* ── Deck detail dialog ─────────────────────────────────────────────────── */
+dialog#deckDialog {
+  border:none; border-radius:14px; padding:0;
+  width:min(680px,96vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  background:var(--bs-body-bg); color:var(--bs-body-color);
+}
+dialog#deckDialog::backdrop { background:rgba(0,0,0,.55); }
+.dd-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:.9rem 1.25rem .75rem;
+  border-bottom:1px solid var(--bs-border-color);
+}
+.dd-body { padding:1rem 1.25rem; max-height:70vh; overflow-y:auto; }
+.dd-footer {
+  padding:.7rem 1.25rem;
+  border-top:1px solid var(--bs-border-color);
+  display:flex; align-items:center; gap:.5rem;
+}
+.dd-card-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(82px,1fr));
+  gap:.5rem;
+}
+.dd-card-item {
+  border-radius:7px; overflow:hidden; position:relative;
+  background:var(--bs-tertiary-bg);
+}
+.dd-card-item img { width:100%; aspect-ratio:63/88; object-fit:cover; display:block; }
+.dd-card-ph { aspect-ratio:63/88; display:flex; align-items:center; justify-content:center; opacity:.3; }
+.dd-card-label {
+  padding:2px 4px; font-size:.6rem; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  background:var(--bs-body-bg);
+}
+.dd-qty-badge {
+  position:absolute; top:3px; right:3px;
+  background:rgba(0,0,0,.75); color:#fff;
+  font-size:.6rem; font-weight:700; padding:1px 4px; border-radius:3px;
+}
+.dd-foil-shimmer {
+  position:absolute; inset:0; border-radius:7px;
+  background:linear-gradient(135deg,rgba(255,215,0,0) 0%,rgba(255,215,0,.18) 30%,rgba(255,255,255,.12) 50%,rgba(180,0,255,.12) 70%,rgba(0,180,255,0) 100%);
+  pointer-events:none;
+}
+.dd-section-label {
+  font-size:.75rem; font-weight:600; color:var(--bs-secondary-color);
+  text-transform:uppercase; letter-spacing:.04em;
+  margin-bottom:.6rem; margin-top:1rem;
+}
+.dd-section-label:first-child { margin-top:0; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if decks %}
+<div class="deck-grid">
+  {% for deck in decks %}
+  {% set ci = deck.color_identity or '' %}
+  <div class="deck-card" data-deck-id="{{ deck.id }}" data-deck-name="{{ deck.name | e }}">
+
+    {# Cover card image #}
+    <div class="deck-cover-banner">
+      {% if deck.cover_card_image %}
+      <img src="{{ deck.cover_card_image }}" alt="{{ deck.name }}">
+      {% else %}
+      <div class="deck-cover-ph"><i class="bi bi-layers-fill"></i></div>
+      {% endif %}
+    </div>
+
+    <div class="deck-card-header">
+      <div class="d-flex align-items-start justify-content-between gap-2 mb-1">
+        <div class="deck-card-name">{{ deck.name }}</div>
+        <span class="badge fmt-{{ deck.format | replace(' ','') }} flex-shrink-0" style="font-size:.65rem">
+          {{ deck.format }}
+        </span>
+      </div>
+      <div class="d-flex gap-1 align-items-center">
+        {% for c in ['W','U','B','R','G'] %}
+          {% if c in ci %}
+          <span class="color-pip pip-{{ c }}"
+                title="{{ {'W':'White','U':'Blue','B':'Black','R':'Red','G':'Green'}[c] }}"></span>
+          {% endif %}
+        {% endfor %}
+        {% if ci == '' %}
+        <span class="text-muted" style="font-size:.72rem">Colorless</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="deck-card-body">
+      {% if deck.description %}
+      <p class="text-muted mb-2" style="font-size:.8rem;line-height:1.4">
+        {{ deck.description | truncate(100) }}
+      </p>
+      {% endif %}
+      <div class="d-flex gap-3 flex-wrap">
+        <div class="deck-stat">
+          <i class="bi bi-collection text-primary"></i>
+          <span><strong>{{ deck.total_quantity }}</strong> cards</span>
+        </div>
+        <div class="deck-stat">
+          <i class="bi bi-currency-dollar text-success"></i>
+          <span><strong>{{ deck.display_value }}</strong></span>
+        </div>
+        <div class="deck-stat text-muted">
+          <i class="bi bi-clock"></i>
+          <span>{{ deck.updated_at.strftime('%b %d') }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="deck-card-footer">
+      <span class="text-muted" style="font-size:.78rem">
+        <i class="bi bi-eye me-1"></i>Click to view cards
+      </span>
+      <i class="bi bi-chevron-right ms-auto text-muted" style="font-size:.8rem"></i>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center py-5">
+  <i class="bi bi-layers" style="font-size:3rem;opacity:.25"></i>
+  <h5 class="mt-3 fw-semibold">No public decks</h5>
+  <p class="text-muted">{{ friend.username }} hasn't shared any decks with friends yet.</p>
+</div>
+{% endif %}
+
+{# ── Deck Detail Dialog ────────────────────────────────────────────────────── #}
+<dialog id="deckDialog" aria-label="Deck cards">
+  <div class="dd-header">
+    <div>
+      <h5 class="mb-0 fw-bold" id="ddName"></h5>
+      <small id="ddMeta" class="text-muted"></small>
+    </div>
+    <button type="button" class="btn-close" id="ddClose"></button>
+  </div>
+  <div class="dd-body">
+    <div id="ddLoading" class="text-center py-5">
+      <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+      <div class="text-muted mt-2" style="font-size:.82rem">Loading cards…</div>
+    </div>
+    <div id="ddContent" style="display:none"></div>
+  </div>
+  <div class="dd-footer">
+    <span class="text-muted me-auto" style="font-size:.78rem">
+      <i class="bi bi-lock me-1"></i>Read-only view
+    </span>
+    <button type="button" class="btn btn-sm btn-secondary" id="ddClose2">Close</button>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const dlg     = document.getElementById('deckDialog');
+  const ddName  = document.getElementById('ddName');
+  const ddMeta  = document.getElementById('ddMeta');
+  const ddLoad  = document.getElementById('ddLoading');
+  const ddCont  = document.getElementById('ddContent');
+
+  document.getElementById('ddClose').addEventListener('click',  () => dlg.close());
+  document.getElementById('ddClose2').addEventListener('click', () => dlg.close());
+
+  const COLOR_BG = {W:'#f9faf4',U:'#0e68ab',B:'#211c20',R:'#d42126',G:'#00773c'};
+
+  function _esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _pips(ci) {
+    if (!ci) return '<span style="font-size:.72rem;opacity:.6">Colorless</span>';
+    return ci.split('').map(c =>
+      `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${COLOR_BG[c]||'#888'};border:1px solid rgba(0,0,0,.3);margin-right:2px"></span>`
+    ).join('');
+  }
+
+  function _renderGroup(cards, label) {
+    const total = cards.reduce((s,c) => s + c.quantity, 0);
+    let h = `<div class="dd-section-label">${_esc(label)} (${total})</div>`;
+    h += '<div class="dd-card-grid">';
+    for (const card of cards) {
+      const img = card.image_small || card.image_normal || '';
+      h += `<div class="dd-card-item" title="${_esc(card.name)} ×${card.quantity}">`;
+      if (img) {
+        h += `<img src="${_esc(img)}" alt="${_esc(card.name)}" loading="lazy">`;
+      } else {
+        h += `<div class="dd-card-ph"><i class="bi bi-question-circle"></i></div>`;
+      }
+      if (card.quantity > 1) h += `<div class="dd-qty-badge">×${card.quantity}</div>`;
+      if (card.is_foil)      h += `<div class="dd-foil-shimmer"></div>`;
+      h += `<div class="dd-card-label">${_esc(card.name)}</div>`;
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  document.querySelectorAll('.deck-card').forEach(tile => {
+    tile.addEventListener('click', async () => {
+      const deckId = tile.dataset.deckId;
+
+      ddName.textContent   = tile.dataset.deckName;
+      ddMeta.innerHTML     = '';
+      ddLoad.style.display = '';
+      ddCont.style.display = 'none';
+      ddCont.innerHTML     = '';
+      dlg.showModal();
+
+      try {
+        const res  = await fetch(`/friends/decks/${deckId}/cards`);
+        const data = await res.json();
+
+        ddMeta.innerHTML = `${_esc(data.format)} &nbsp;·&nbsp; ${data.total_quantity} cards &nbsp;·&nbsp; ${_pips(data.color_identity)}`;
+
+        if (!data.cards || !data.cards.length) {
+          ddCont.innerHTML = '<div class="text-center py-4 text-muted" style="font-size:.85rem">This deck has no cards yet.</div>';
+        } else {
+          const main = data.cards.filter(c => !c.is_sideboard);
+          const side = data.cards.filter(c =>  c.is_sideboard);
+          let html = '';
+          if (main.length) html += _renderGroup(main, 'Mainboard');
+          if (side.length) html += _renderGroup(side, 'Sideboard');
+          ddCont.innerHTML = html;
+        }
+
+        ddLoad.style.display = 'none';
+        ddCont.style.display = '';
+      } catch {
+        ddLoad.innerHTML = '<div class="text-center text-danger py-4" style="font-size:.85rem">Failed to load deck cards.</div>';
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

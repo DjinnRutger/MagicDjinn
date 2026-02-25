@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Roles — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-shield-check me-2 text-primary"></i>Roles &amp; Permissions</h1>
+    <p class="lead">{{ roles|length }} role{{ 's' if roles|length != 1 }}</p>
+  </div>
+  <a href="{{ url_for('admin.role_create') }}" class="btn btn-primary">
+    <i class="bi bi-shield-plus me-1"></i>New Role
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Role Name</th>
+          <th>Description</th>
+          <th>Users</th>
+          <th>Permissions</th>
+          <th>Created</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for role in roles %}
+        <tr>
+          <td class="text-muted" style="font-size:.78rem">{{ role.id }}</td>
+          <td>
+            <span class="fw-semibold" style="font-size:.875rem">{{ role.name }}</span>
+          </td>
+          <td class="text-muted" style="font-size:.82rem">{{ role.description or '—' }}</td>
+          <td>
+            <span class="badge bg-secondary bg-opacity-50">{{ role.users.count() }}</span>
+          </td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              {% for perm in role.permissions[:4] %}
+              <span class="badge bg-primary bg-opacity-15 text-primary border" style="font-size:.65rem;font-weight:600">{{ perm.name }}</span>
+              {% endfor %}
+              {% if role.permissions|length > 4 %}
+              <span class="badge bg-secondary bg-opacity-50" style="font-size:.65rem">+{{ role.permissions|length - 4 }} more</span>
+              {% endif %}
+              {% if not role.permissions %}
+              <span class="text-muted" style="font-size:.78rem">—</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="text-muted" style="font-size:.78rem">{{ role.created_at.strftime('%b %d, %Y') }}</td>
+          <td>
+            <div class="action-buttons justify-content-end">
+              <a href="{{ url_for('admin.role_edit', role_id=role.id) }}"
+                 class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <form method="POST" action="{{ url_for('admin.role_delete', role_id=role.id) }}"
+                    data-confirm="Delete role '{{ role.name }}'? This cannot be undone.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger btn-icon"
+                        title="Delete" {{ 'disabled' if role.users.count() > 0 }}>
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="empty-state">
+            <i class="bi bi-shield-x"></i>No roles yet. <a href="{{ url_for('admin.role_create') }}">Create one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

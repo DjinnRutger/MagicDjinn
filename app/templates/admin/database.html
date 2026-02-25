@@ -1,0 +1,880 @@
+{% extends "base.html" %}
+{% block title %}Database — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-database me-2 text-primary"></i>Database</h1>
+    <p class="lead">Statistics, backup, and connection configuration</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Tab navigation ── #}
+<ul class="nav nav-tabs db-tabs mb-4" id="db-tab-nav">
+  <li class="nav-item">
+    <a class="nav-link active" href="#" data-dbtab="overview">
+      <i class="bi bi-bar-chart-line me-1"></i>Overview
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="#" data-dbtab="backup">
+      <i class="bi bi-arrow-repeat me-1"></i>Backup / Restore
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="#" data-dbtab="config">
+      <i class="bi bi-plug me-1"></i>Configuration
+    </a>
+  </li>
+</ul>
+
+{# ════════════════════════════════════════════════════════
+   OVERVIEW TAB
+   ════════════════════════════════════════════════════════ #}
+<div class="db-tab-pane" id="dbtab-overview">
+
+  {# ── Stat cards row ── #}
+  <div class="row g-3 mb-4">
+
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-icon-wrap text-primary">
+            <i class="bi bi-table"></i>
+          </div>
+          <div class="stat-value">{{ db_info.table_count }}</div>
+          <div class="stat-label">Tables</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-icon-wrap text-success">
+            <i class="bi bi-grid-3x3"></i>
+          </div>
+          <div class="stat-value">{{ "{:,}".format(db_info.total_rows) }}</div>
+          <div class="stat-label">Total Rows</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-icon-wrap {% if db_info.db_size_bytes %}text-warning{% else %}text-secondary{% endif %}">
+            <i class="bi bi-hdd"></i>
+          </div>
+          <div class="stat-value">{{ db_info.db_size_human }}</div>
+          <div class="stat-label">Database Size</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-icon-wrap {% if db_info.is_sqlite %}text-info{% else %}text-primary{% endif %}">
+            <i class="bi bi-{% if db_info.is_sqlite %}database-fill-gear{% else %}cloud-fill{% endif %}"></i>
+          </div>
+          <div class="stat-value" style="font-size:1.1rem">
+            {% if db_info.is_sqlite %}SQLite{% else %}PostgreSQL{% endif %}
+          </div>
+          <div class="stat-label">Engine</div>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /row #}
+
+  {# ── Activity chart + connection info ── #}
+  <div class="row g-3 mb-4">
+
+    <div class="col-12 col-xl-8">
+      <div class="card h-100">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-activity me-2 text-primary"></i>Audit Activity — Last 14 Days</span>
+          <span class="badge bg-secondary bg-opacity-50" style="font-size:.72rem">
+            {{ activity | sum(attribute='count') }} events
+          </span>
+        </div>
+        <div class="card-body p-3">
+          <div class="db-chart-wrap">
+            <svg id="activity-svg" viewBox="0 0 700 165" preserveAspectRatio="xMidYMid meet"
+                 xmlns="http://www.w3.org/2000/svg" class="activity-chart-svg">
+
+              {# Grid lines (4 horizontal) #}
+              {% for pct in [25, 50, 75, 100] %}
+              {% set gy = 120 - (pct * 105 / 100) | int %}
+              <line x1="48" y1="{{ gy }}" x2="688" y2="{{ gy }}" class="chart-grid-line"/>
+              {% set label_val = (max_activity * pct / 100) | round | int %}
+              <text x="44" y="{{ gy + 4 }}" class="chart-y-label">{{ label_val }}</text>
+              {% endfor %}
+
+              {# Bars #}
+              {% for day in activity %}
+              {% set i = loop.index0 %}
+              {% set bar_h = ((day.count / max_activity) * 105) | int if max_activity > 0 else 0 %}
+              {% set bx = 50 + i * 45 %}
+              {% set by = 120 - bar_h %}
+
+              {# Bar #}
+              <rect x="{{ bx }}" y="{{ by }}" width="35" height="{{ bar_h }}"
+                    rx="3" class="chart-bar"
+                    data-count="{{ day.count }}" data-date="{{ day.date }}"/>
+
+              {# Count label above bar #}
+              {% if day.count > 0 %}
+              <text x="{{ bx + 17 }}" y="{{ by - 4 }}" class="chart-count-label">{{ day.count }}</text>
+              {% endif %}
+
+              {# Date label below #}
+              <text x="{{ bx + 17 }}" y="140" class="chart-date-label">
+                {{ day.date.split(' ')[0][:3] }}
+              </text>
+              <text x="{{ bx + 17 }}" y="152" class="chart-date-label chart-date-day">
+                {{ day.date.split(' ')[1] }}
+              </text>
+
+              {% endfor %}
+
+              {# Baseline #}
+              <line x1="48" y1="121" x2="688" y2="121" class="chart-baseline"/>
+
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-info-circle me-2 text-primary"></i>Connection</span>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <tbody>
+              <tr>
+                <td class="ps-3 text-muted" style="width:40%; font-size:.8rem">Engine</td>
+                <td class="pe-3" style="font-size:.82rem">
+                  {% if db_info.is_sqlite %}
+                  <span class="badge bg-info bg-opacity-75 text-dark">SQLite</span>
+                  {% else %}
+                  <span class="badge bg-primary bg-opacity-75">PostgreSQL</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">URI</td>
+                <td class="pe-3" style="font-size:.72rem; font-family:monospace; word-break:break-all">
+                  {{ db_info.db_url_safe }}
+                </td>
+              </tr>
+              {% if db_info.db_path %}
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">File</td>
+                <td class="pe-3" style="font-size:.72rem; font-family:monospace; word-break:break-all">
+                  {{ db_info.db_path }}
+                </td>
+              </tr>
+              {% endif %}
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">Tables</td>
+                <td class="pe-3" style="font-size:.82rem">{{ db_info.table_count }}</td>
+              </tr>
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">Total Rows</td>
+                <td class="pe-3" style="font-size:.82rem">{{ "{:,}".format(db_info.total_rows) }}</td>
+              </tr>
+              {% if db_info.db_size_bytes is not none %}
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">File Size</td>
+                <td class="pe-3" style="font-size:.82rem">{{ db_info.db_size_human }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /row #}
+
+  {# ── Table breakdown ── #}
+  <div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span class="fw-semibold"><i class="bi bi-table me-2 text-primary"></i>Table Breakdown</span>
+      <span class="badge bg-secondary bg-opacity-50" style="font-size:.72rem">
+        {{ db_info.table_count }} tables
+      </span>
+    </div>
+    <div class="card-body p-0">
+      {% if db_info.tables %}
+      <div class="table-breakdown-list">
+        {% for t in db_info.tables %}
+        {% set pct = ((t.rows / max_rows) * 100) | round(1) if max_rows > 0 else 0 %}
+        <div class="tb-row">
+          <div class="tb-name"><i class="bi bi-table text-muted me-2" style="font-size:.75rem"></i>{{ t.name }}</div>
+          <div class="tb-bar-wrap">
+            <div class="tb-bar" style="width: {{ pct }}%"></div>
+          </div>
+          <div class="tb-count">{{ "{:,}".format(t.rows) }} <span class="text-muted">rows</span></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state"><i class="bi bi-table"></i>No tables found.</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>{# /dbtab-overview #}
+
+
+{# ════════════════════════════════════════════════════════
+   BACKUP TAB
+   ════════════════════════════════════════════════════════ #}
+<div class="db-tab-pane d-none" id="dbtab-backup">
+
+  <div class="row g-3">
+
+    {# Download card #}
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-download me-2 text-primary"></i>Download Backup</span>
+        </div>
+        <div class="card-body d-flex flex-column">
+          {% if db_info.is_sqlite %}
+          <p class="mb-1" style="font-size:.9rem">
+            Download a complete copy of the SQLite database file.
+            The file is copied safely before streaming — the running app is not affected.
+          </p>
+          <div class="mt-2 mb-3 p-3 rounded" style="background: var(--bs-secondary-bg); font-size:.82rem">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-hdd text-primary"></i>
+              <strong>{{ db_info.db_size_human }}</strong> — ready to download
+            </div>
+            <div class="text-muted" style="font-family:monospace;font-size:.75rem">{{ db_info.db_path }}</div>
+          </div>
+          <div class="mt-auto">
+            <a href="{{ url_for('database.backup_download') }}"
+               class="btn btn-primary">
+              <i class="bi bi-cloud-download me-2"></i>Download SQLite Backup
+            </a>
+          </div>
+          {% else %}
+          <div class="alert alert-info mb-0">
+            <i class="bi bi-info-circle me-2"></i>
+            You are using <strong>PostgreSQL</strong>. Direct file download is not available.
+            Use <code>pg_dump</code> to create a backup (see the guide on the right).
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Guide card #}
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-book me-2 text-primary"></i>Backup Guide</span>
+        </div>
+        <div class="card-body" style="font-size:.875rem">
+
+          {% if db_info.is_sqlite %}
+          <p class="mb-2"><strong>SQLite</strong> — simple file copy</p>
+          <p class="text-muted mb-2" style="font-size:.82rem">
+            The download button above is the easiest approach. For automated backups:
+          </p>
+          <pre class="db-code-block"># Windows (PowerShell)
+Copy-Item instance\app.db `
+  "backup_$(Get-Date -f yyyyMMdd_HHmmss).db"
+
+# Mac / Linux
+cp instance/app.db \
+  backup_$(date +%Y%m%d_%H%M%S).db</pre>
+          <p class="text-muted mt-2 mb-0" style="font-size:.78rem">
+            <i class="bi bi-lightbulb me-1"></i>
+            Schedule this with Task Scheduler (Windows) or cron (Linux/Mac) for automatic daily backups.
+          </p>
+
+          {% else %}
+          <p class="mb-2"><strong>PostgreSQL</strong> — pg_dump</p>
+          <pre class="db-code-block"># Full backup
+pg_dump -U username -h hostname \
+  -F c -f backup_$(date +%Y%m%d).dump \
+  database_name
+
+# Restore
+pg_restore -U username -h hostname \
+  -d database_name backup.dump</pre>
+          <p class="text-muted mt-2 mb-0" style="font-size:.78rem">
+            <i class="bi bi-lightbulb me-1"></i>
+            <code>-F c</code> uses custom compressed format (recommended).
+            Use <code>-F p</code> for plain SQL if you need a human-readable file.
+          </p>
+          {% endif %}
+
+          <hr class="my-3">
+
+          <p class="mb-1"><strong>Best Practices</strong></p>
+          <ul class="text-muted mb-0" style="font-size:.82rem">
+            <li>Back up before any schema changes or major updates</li>
+            <li>Store backups off-site (not on the same machine)</li>
+            <li>Test restores periodically to verify backup integrity</li>
+            <li>Rotate old backups to save space (keep last 7–30 days)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /first row (download + guide) #}
+
+  {# ── Restore section ── #}
+  {% if db_info.is_sqlite %}
+  <div class="row g-3 mt-1">
+    <div class="col-12">
+      <div class="card border-danger" style="border-opacity:.4">
+        <div class="card-header" style="background:rgba(var(--bs-danger-rgb),.08)">
+          <span class="fw-semibold text-danger">
+            <i class="bi bi-upload me-2"></i>Restore from Backup
+          </span>
+        </div>
+        <div class="card-body">
+
+          <div class="alert alert-danger d-flex gap-2 mb-4" style="font-size:.85rem">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>
+              <strong>Destructive action:</strong> restoring will <strong>permanently overwrite</strong>
+              the live database with the contents of the uploaded file.
+              A timestamped safety backup of the current database is created automatically before the swap.
+            </div>
+          </div>
+
+          <div class="row g-4">
+
+            {# Upload form #}
+            <div class="col-12 col-lg-7">
+              <form method="POST"
+                    action="{{ url_for('database.backup_restore') }}"
+                    enctype="multipart/form-data"
+                    id="restore-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="confirm_restore" value="yes">
+
+                <div class="mb-3">
+                  <label class="form-label fw-semibold" for="restore-file-input"
+                         style="font-size:.9rem">
+                    Select backup file <span class="text-danger">*</span>
+                  </label>
+                  <input type="file"
+                         name="backup_file"
+                         id="restore-file-input"
+                         class="form-control"
+                         accept=".db"
+                         required>
+                  <div class="form-text">SQLite <code>.db</code> files only. Maximum 50 MB.</div>
+                </div>
+
+                <div class="form-check mb-4">
+                  <input class="form-check-input" type="checkbox" id="restore-confirm-check">
+                  <label class="form-check-label" for="restore-confirm-check"
+                         style="font-size:.875rem">
+                    I understand this will <strong>overwrite</strong> the current database
+                    and that a restart will be required.
+                  </label>
+                </div>
+
+                <button type="button"
+                        class="btn btn-danger"
+                        id="restore-trigger-btn">
+                  <i class="bi bi-upload me-2"></i>Restore Database
+                </button>
+                <div id="restore-validation-msg" class="mt-2" style="display:none; font-size:.82rem"></div>
+              </form>
+            </div>
+
+            {# What-happens info panel #}
+            <div class="col-12 col-lg-5">
+              <div class="p-3 rounded h-100" style="background:var(--bs-secondary-bg); font-size:.82rem">
+                <p class="fw-semibold mb-2">
+                  <i class="bi bi-list-check me-1 text-primary"></i>What happens during restore
+                </p>
+                <ol class="ps-3 mb-3 text-muted">
+                  <li>The uploaded file is validated as a SQLite 3 database (magic bytes)</li>
+                  <li>Schema compatibility is checked against the current app models</li>
+                  <li>Any missing columns are migrated automatically where possible</li>
+                  <li>A timestamped safety backup of the current database is saved to <code>instance/</code></li>
+                  <li>The database file is replaced with the (migrated) backup</li>
+                  <li>A server restart is required to fully reload the new database</li>
+                </ol>
+                <p class="fw-semibold mb-1 mt-2">
+                  <i class="bi bi-arrow-up-circle me-1 text-success"></i>Schema migration rules
+                </p>
+                <ul class="ps-3 mb-0 text-muted">
+                  <li>Missing nullable columns are added with safe defaults</li>
+                  <li>Extra columns in the backup are left as-is (harmless)</li>
+                  <li>Missing tables are recreated empty on the next server start</li>
+                  <li>Non-nullable columns with no default will generate a warning</li>
+                </ul>
+              </div>
+            </div>
+
+          </div>{# /row #}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="row g-3 mt-1">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-upload me-2 text-secondary"></i>Restore from Backup</span>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info mb-0" style="font-size:.875rem">
+            <i class="bi bi-info-circle me-2"></i>
+            You are using <strong>PostgreSQL</strong>. Use
+            <code>pg_restore</code> to restore from a <code>pg_dump</code> backup.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>{# /dbtab-backup #}
+
+{# ── Restore confirmation dialog (native <dialog> — no Bootstrap JS required) ── #}
+<dialog id="restoreModal" aria-label="Confirm database restore"
+        style="border:1px solid var(--bs-border-color);border-radius:var(--radius);
+               padding:0;max-width:500px;width:calc(100% - 2rem);
+               background:var(--bs-body-bg);color:var(--bs-body-color);
+               box-shadow:0 20px 60px rgba(0,0,0,.35);outline:none">
+  <div style="background:rgba(var(--bs-danger-rgb),.08);padding:.85rem 1.25rem;
+              border-bottom:1px solid var(--bs-border-color);
+              display:flex;align-items:center;gap:.5rem">
+    <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+    <span class="fw-semibold text-danger" style="font-size:.95rem">
+      Confirm Database Restore
+    </span>
+    <button type="button" id="restore-modal-close"
+            style="margin-left:auto;background:transparent;
+                   border:1px solid var(--bs-border-color);border-radius:var(--radius);
+                   color:var(--bs-secondary-color);padding:.2rem .4rem;
+                   line-height:1;cursor:pointer"
+            aria-label="Close">
+      <i class="bi bi-x-lg" style="font-size:.75rem"></i>
+    </button>
+  </div>
+  <div style="padding:1.25rem;font-size:.9rem">
+    <p>You are about to <strong>replace the entire live database</strong> with the
+       contents of the uploaded backup file.</p>
+    <p>All current data (users, settings, audit logs, etc.) will be
+       <strong>permanently overwritten</strong>.</p>
+    <p class="mb-1">
+      <i class="bi bi-shield-check me-1 text-success"></i>
+      A safety backup of the current database will be saved to
+      <code>instance/</code> before the swap.
+    </p>
+    <p class="mb-0 mt-3 fw-semibold text-danger">
+      Are you absolutely sure you want to proceed?
+    </p>
+  </div>
+  <div style="padding:.75rem 1.25rem;border-top:1px solid var(--bs-border-color);
+              display:flex;gap:.5rem;justify-content:flex-end">
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            id="restore-modal-cancel">Cancel</button>
+    <button type="button" class="btn btn-danger btn-sm" id="restore-confirm-btn">
+      <i class="bi bi-upload me-2"></i>Yes, Restore Database
+    </button>
+  </div>
+</dialog>
+<style>
+  #restoreModal::backdrop { background:rgba(0,0,0,.5); backdrop-filter:blur(3px); }
+</style>
+
+
+{# ════════════════════════════════════════════════════════
+   CONFIGURATION TAB
+   ════════════════════════════════════════════════════════ #}
+<div class="db-tab-pane d-none" id="dbtab-config">
+
+  <div class="row g-3">
+
+    {# Config form #}
+    <div class="col-12 col-lg-7">
+      <div class="card">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-plug me-2 text-primary"></i>Database Connection</span>
+        </div>
+        <div class="card-body">
+
+          <div class="alert alert-warning d-flex gap-2 mb-4" style="font-size:.85rem">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>
+              Changes require a <strong>server restart</strong> to take effect.
+              The app will continue using the current database until restarted.
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('database.config_save') }}" id="db-config-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            {# DB type radio #}
+            <p class="fw-semibold mb-2" style="font-size:.9rem">Database Engine</p>
+            <div class="row g-2 mb-3">
+
+              <div class="col-12 col-sm-6">
+                <label class="db-engine-card {% if pending_db_type == 'sqlite' %}selected{% endif %}"
+                       for="db-type-sqlite">
+                  <input type="radio" name="db_type" id="db-type-sqlite" value="sqlite"
+                         {% if pending_db_type == 'sqlite' %}checked{% endif %}>
+                  <div class="dec-icon"><i class="bi bi-database-fill-gear"></i></div>
+                  <div>
+                    <div class="fw-semibold" style="font-size:.9rem">SQLite (Built-in)</div>
+                    <div class="text-muted" style="font-size:.76rem">
+                      Single file, zero config. Great for development and small deployments.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="col-12 col-sm-6">
+                <label class="db-engine-card {% if pending_db_type == 'postgresql' %}selected{% endif %}"
+                       for="db-type-pg">
+                  <input type="radio" name="db_type" id="db-type-pg" value="postgresql"
+                         {% if pending_db_type == 'postgresql' %}checked{% endif %}>
+                  <div class="dec-icon"><i class="bi bi-cloud-fill"></i></div>
+                  <div>
+                    <div class="fw-semibold" style="font-size:.9rem">PostgreSQL</div>
+                    <div class="text-muted" style="font-size:.76rem">
+                      Production-grade. Multi-user, concurrent writes, large datasets.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+            </div>
+
+            {# PostgreSQL URI (shown only for PostgreSQL) #}
+            <div id="pg-uri-section" class="{% if pending_db_type != 'postgresql' %}d-none{% endif %}">
+              <p class="fw-semibold mb-1" style="font-size:.9rem">
+                Connection URI
+                <span class="text-danger">*</span>
+              </p>
+              <p class="text-muted mb-2" style="font-size:.78rem">
+                Format: <code>postgresql://user:password@host:port/dbname</code>
+              </p>
+              <div class="input-group mb-2">
+                <input type="text" name="external_db_uri" id="pg-uri-input"
+                       class="form-control font-monospace"
+                       style="font-size:.82rem"
+                       placeholder="postgresql://user:pass@localhost:5432/mydb"
+                       value="{{ pending_ext_uri }}"
+                       autocomplete="off" spellcheck="false">
+                <button type="button" class="btn btn-outline-secondary" id="test-conn-btn"
+                        title="Test connection">
+                  <i class="bi bi-wifi me-1"></i>Test
+                </button>
+              </div>
+              <div id="test-conn-result" class="mb-2" style="display:none; font-size:.82rem"></div>
+            </div>
+
+            <div class="d-flex gap-2 mt-3">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-2"></i>Save Configuration
+              </button>
+              <a href="{{ url_for('database.index') }}" class="btn btn-outline-secondary">
+                Cancel
+              </a>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {# Help / current status sidebar #}
+    <div class="col-12 col-lg-5 d-flex flex-column gap-3">
+
+      {# Current active connection #}
+      <div class="card">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-activity me-2 text-success"></i>Active Connection</span>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <tbody>
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem; width:40%">Engine</td>
+                <td class="pe-3" style="font-size:.82rem">
+                  {% if db_info.is_sqlite %}
+                  <span class="badge bg-info bg-opacity-75 text-dark">SQLite</span>
+                  {% else %}
+                  <span class="badge bg-primary bg-opacity-75">PostgreSQL</span>
+                  {% endif %}
+                  <span class="ms-2 badge bg-success bg-opacity-75">Connected</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="ps-3 text-muted" style="font-size:.8rem">URI</td>
+                <td class="pe-3" style="font-size:.72rem; font-family:monospace; word-break:break-all">
+                  {{ db_info.db_url_safe }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# Migration notes #}
+      <div class="card">
+        <div class="card-header">
+          <span class="fw-semibold"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Migrating Databases</span>
+        </div>
+        <div class="card-body" style="font-size:.82rem">
+          <p class="mb-2">When switching from SQLite → PostgreSQL:</p>
+          <ol class="ps-3 mb-2 text-muted">
+            <li>Create an empty PostgreSQL database</li>
+            <li>Configure the URI below and save</li>
+            <li>Restart the server — it will auto-migrate the schema</li>
+            <li>Import your SQLite data using a migration tool
+              (<code>pgloader</code> or a custom script)</li>
+          </ol>
+          <div class="p-2 rounded" style="background:var(--bs-secondary-bg)">
+            <code style="font-size:.75rem">
+              pgloader sqlite:///instance/app.db<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;postgresql://user:pass@host/db
+            </code>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>{# /dbtab-config #}
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+(function () {
+
+  /* ── Tab switching ── */
+  var tabs   = document.querySelectorAll("[data-dbtab]");
+  var panes  = document.querySelectorAll(".db-tab-pane");
+
+  function activateTab(name) {
+    tabs.forEach(function (t) {
+      t.classList.toggle("active", t.dataset.dbtab === name);
+    });
+    panes.forEach(function (p) {
+      var show = p.id === "dbtab-" + name;
+      p.classList.toggle("d-none", !show);
+    });
+    // Update hash without scrolling
+    history.replaceState(null, "", window.location.pathname + "#" + name);
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function (e) {
+      e.preventDefault();
+      activateTab(t.dataset.dbtab);
+    });
+  });
+
+  // Activate from URL hash on load
+  var hash = window.location.hash.replace("#", "");
+  if (hash && document.getElementById("dbtab-" + hash)) {
+    activateTab(hash);
+  }
+
+  /* ── Engine radio → show/hide PostgreSQL URI ── */
+  var radios     = document.querySelectorAll("[name='db_type']");
+  var pgSection  = document.getElementById("pg-uri-section");
+
+  function syncRadio() {
+    var val = document.querySelector("[name='db_type']:checked");
+    if (!val || !pgSection) return;
+    pgSection.classList.toggle("d-none", val.value !== "postgresql");
+    // Also visually mark selected card
+    document.querySelectorAll(".db-engine-card").forEach(function (card) {
+      var inp = card.querySelector("input[type='radio']");
+      card.classList.toggle("selected", inp && inp.checked);
+    });
+  }
+
+  radios.forEach(function (r) { r.addEventListener("change", syncRadio); });
+  // Also make the whole card label clickable (it already is, but re-sync visuals)
+  document.querySelectorAll(".db-engine-card").forEach(function (card) {
+    card.addEventListener("click", syncRadio);
+  });
+
+  /* ── Test connection ── */
+  var testBtn    = document.getElementById("test-conn-btn");
+  var testResult = document.getElementById("test-conn-result");
+  var uriInput   = document.getElementById("pg-uri-input");
+  var csrfMeta   = document.querySelector('meta[name="csrf-token"]');
+
+  if (testBtn) {
+    testBtn.addEventListener("click", function () {
+      var uri = uriInput ? uriInput.value.trim() : "";
+      if (!uri) {
+        showTestResult("Enter a URI first.", "danger");
+        return;
+      }
+      testBtn.disabled = true;
+      testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing…';
+
+      fetch("{{ url_for('database.test_connection') }}", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfMeta ? csrfMeta.content : "",
+        },
+        body: JSON.stringify({ uri: uri }),
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          showTestResult('<i class="bi bi-check-circle-fill me-1"></i>' + data.message, "success");
+        } else {
+          showTestResult('<i class="bi bi-x-circle-fill me-1"></i>' + data.error, "danger");
+        }
+      })
+      .catch(function () {
+        showTestResult("Network error. Check server logs.", "danger");
+      })
+      .finally(function () {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="bi bi-wifi me-1"></i>Test';
+      });
+    });
+  }
+
+  function showTestResult(msg, type) {
+    if (!testResult) return;
+    testResult.innerHTML = '<div class="alert alert-' + type + ' py-2 mb-0">' + msg + '</div>';
+    testResult.style.display = "block";
+  }
+
+  /* ── Restore form ── */
+  var restoreFileInput  = document.getElementById("restore-file-input");
+  var restoreConfirmChk = document.getElementById("restore-confirm-check");
+  var restoreTriggerBtn = document.getElementById("restore-trigger-btn");
+  var restoreConfirmBtn = document.getElementById("restore-confirm-btn");
+  var restoreForm       = document.getElementById("restore-form");
+  var restoreValidMsg   = document.getElementById("restore-validation-msg");
+
+  function showRestoreError(msg) {
+    if (!restoreValidMsg) return;
+    restoreValidMsg.innerHTML =
+      '<div class="alert alert-warning py-2 mb-0">' +
+      '<i class="bi bi-exclamation-circle me-1"></i>' + msg + '</div>';
+    restoreValidMsg.style.display = "block";
+  }
+
+  function clearRestoreError() {
+    if (restoreValidMsg) restoreValidMsg.style.display = "none";
+  }
+
+  if (restoreFileInput)  restoreFileInput.addEventListener("change",  clearRestoreError);
+  if (restoreConfirmChk) restoreConfirmChk.addEventListener("change", clearRestoreError);
+
+  if (restoreTriggerBtn) {
+    restoreTriggerBtn.addEventListener("click", function () {
+      var hasFile   = restoreFileInput && restoreFileInput.files.length > 0;
+      var confirmed = restoreConfirmChk && restoreConfirmChk.checked;
+
+      if (!hasFile && !confirmed) {
+        showRestoreError("Select a backup file and tick the confirmation checkbox.");
+        return;
+      }
+      if (!hasFile) {
+        showRestoreError("Select a backup file first.");
+        return;
+      }
+      if (!confirmed) {
+        showRestoreError("Tick the confirmation checkbox to continue.");
+        return;
+      }
+
+      clearRestoreError();
+      var dlg = document.getElementById("restoreModal");
+      if (dlg) dlg.showModal();
+    });
+  }
+
+  // Close buttons inside the dialog
+  var restoreDlgClose  = document.getElementById("restore-modal-close");
+  var restoreDlgCancel = document.getElementById("restore-modal-cancel");
+  var restoreDlg       = document.getElementById("restoreModal");
+
+  function closeRestoreDlg() { if (restoreDlg) restoreDlg.close(); }
+  if (restoreDlgClose)  restoreDlgClose.addEventListener("click",  closeRestoreDlg);
+  if (restoreDlgCancel) restoreDlgCancel.addEventListener("click", closeRestoreDlg);
+
+  // Click on backdrop closes dialog
+  if (restoreDlg) {
+    restoreDlg.addEventListener("click", function (e) {
+      var r = restoreDlg.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right ||
+          e.clientY < r.top  || e.clientY > r.bottom) {
+        restoreDlg.close();
+      }
+    });
+  }
+
+  // "Yes, Restore Database" → close dialog then submit form
+  if (restoreConfirmBtn && restoreForm) {
+    restoreConfirmBtn.addEventListener("click", function () {
+      closeRestoreDlg();
+      restoreConfirmBtn.disabled = true;
+      restoreConfirmBtn.innerHTML =
+        '<span class="spinner-border spinner-border-sm me-2"></span>Restoring…';
+      restoreForm.submit();
+    });
+  }
+
+  /* ── Chart bar hover tooltip ── */
+  var tip  = document.getElementById("chart-tooltip");
+  var bars = document.querySelectorAll(".chart-bar");
+  bars.forEach(function (bar) {
+    bar.addEventListener("mouseenter", function () {
+      if (!tip) return;
+      tip.textContent = bar.dataset.date + ": " + bar.dataset.count + " event" +
+                        (bar.dataset.count === "1" ? "" : "s");
+      tip.style.display = "block";
+    });
+    bar.addEventListener("mousemove", function (e) {
+      if (!tip) return;
+      tip.style.left  = e.clientX + "px";
+      tip.style.top   = (e.clientY - 8) + "px";
+    });
+    bar.addEventListener("mouseleave", function () {
+      if (tip) tip.style.display = "none";
+    });
+  });
+
+})();
+</script>
+
+{# Floating tooltip for chart bars #}
+<div id="chart-tooltip"
+     style="display:none;position:fixed;padding:.3rem .65rem;background:rgba(15,23,42,.92);
+            color:#e2e8f0;font-size:.75rem;border-radius:.3rem;pointer-events:none;
+            z-index:9999;white-space:nowrap;transform:translate(-50%,-130%);
+            box-shadow:0 4px 12px rgba(0,0,0,.3)"
+     aria-hidden="true"></div>
+
+{% endblock %}

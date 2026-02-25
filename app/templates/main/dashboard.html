@@ -1,0 +1,1139 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block head %}
+<style>
+/* ── MTG stat cards ────────────────────────────────────────────────────────── */
+.mtg-stat {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  background: var(--bs-body-bg);
+  display: flex; align-items: center; gap: .9rem;
+  transition: box-shadow .2s;
+}
+.mtg-stat:hover { box-shadow: var(--shadow-md); cursor: pointer; }
+.mtg-stat-icon {
+  width: 46px; height: 46px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; flex-shrink: 0;
+}
+.mtg-stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.mtg-stat-label { font-size: .73rem; color: var(--bs-secondary-color); margin-top: 2px; }
+
+/* ── Quick links ────────────────────────────────────────────────────────────── */
+.quick-links { display: flex; gap: .65rem; flex-wrap: wrap; }
+.quick-links .btn { font-size: .82rem; padding: .38rem .9rem; }
+
+/* ── Community Spotlight ────────────────────────────────────────────────────── */
+.sl-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem;
+  opacity: 1; transition: opacity .4s ease;
+}
+@media (max-width: 991.98px) {
+  .sl-grid { grid-template-columns: 1fr; }
+  .sl-second-only { display: none !important; }
+}
+@media (min-width: 992px) {
+  .sl-grid > .sl-wrap + .sl-wrap {
+    padding-left: .5rem;
+    border-left: 1px solid var(--bs-border-color-translucent);
+  }
+}
+.sl-wrap {
+  display: flex; gap: 1.35rem; align-items: flex-start;
+  transition: opacity .35s ease;
+}
+.sl-img-col { flex-shrink: 0; width: 210px; position: relative; }
+.sl-img-col img {
+  width: 100%; border-radius: 11px; display: block;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45);
+}
+.sl-foil-shimmer {
+  position: absolute; inset: 0; border-radius: 11px;
+  background: linear-gradient(135deg,rgba(255,215,0,.0) 0%,rgba(255,215,0,.22) 30%,rgba(255,255,255,.14) 50%,rgba(180,0,255,.14) 70%,rgba(0,180,255,.0) 100%);
+  pointer-events: none;
+}
+.sl-info-col { flex: 1; min-width: 0; }
+.sl-name { font-size: 1.15rem; font-weight: 800; line-height: 1.3; margin: 0 0 .5rem; }
+.sl-oracle {
+  font-size: .82rem; line-height: 1.65; white-space: pre-wrap;
+  max-height: 130px; overflow-y: auto;
+}
+.sl-progress-rail {
+  flex: 1; height: 3px; background: var(--bs-border-color);
+  border-radius: 3px; overflow: hidden;
+}
+.sl-progress-bar {
+  height: 100%; background: var(--primary);
+  border-radius: 3px; width: 0%;
+}
+
+/* Skeleton pulse */
+.skel-pulse {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--bs-tertiary-bg) 25%, var(--bs-border-color) 50%, var(--bs-tertiary-bg) 75%);
+  background-size: 200% 100%;
+  animation: skelPulse 1.4s ease infinite;
+}
+@keyframes skelPulse { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+@media (max-width: 576px) {
+  .sl-wrap { flex-direction: column; }
+  .sl-img-col { width: 100%; max-width: 180px; margin: 0 auto; }
+}
+
+/* ── Activity feed ──────────────────────────────────────────────────────────── */
+.activity-item {
+  display: flex; align-items: flex-start; gap: .65rem;
+  padding: .65rem .85rem;
+  border-bottom: 1px solid var(--bs-border-color);
+  font-size: .8rem;
+}
+.activity-item:last-child { border-bottom: none; }
+.act-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem; flex-shrink: 0; margin-top: 1px;
+}
+.act-body { flex: 1; min-width: 0; }
+.act-who { font-weight: 600; }
+.act-what { color: var(--bs-secondary-color); }
+.act-when { font-size: .7rem; color: var(--bs-secondary-color); margin-top: 2px; }
+
+/* ── Social Feed ─────────────────────────────────────────────────────────── */
+.fp { padding: 1rem 1.1rem; border-bottom: 1px solid var(--bs-border-color); }
+.fp:last-child { border-bottom: none; }
+.fp-header { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; }
+.fp-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+  background: var(--primary, #0f172a); color: #fff;
+  font-size: .75rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.fp-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.fp-author { font-weight: 700; font-size: .88rem; line-height: 1.2; }
+.fp-time { font-size: .72rem; color: var(--bs-secondary-color); }
+.fp-body { font-size: .88rem; margin-bottom: .6rem; }
+.fp-media { margin-bottom: .7rem; }
+.fp-cards-strip { display: flex; gap: .4rem; flex-wrap: wrap; }
+.fp-card-thumb {
+  width: 54px; aspect-ratio: 63/88; border-radius: 5px; overflow: hidden;
+  flex-shrink: 0; background: var(--bs-tertiary-bg);
+}
+.fp-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fp-more-badge {
+  width: 54px; aspect-ratio: 63/88; border-radius: 5px; flex-shrink: 0;
+  background: var(--bs-tertiary-bg); display: flex; align-items: center;
+  justify-content: center; font-size: .72rem; font-weight: 700;
+  color: var(--bs-secondary-color);
+}
+.fp-deck-card {
+  border: 1px solid var(--bs-border-color); border-radius: 10px;
+  padding: .65rem .85rem; display: flex; align-items: center; gap: .75rem;
+  font-size: .84rem; max-width: 340px;
+}
+.fp-deck-cover {
+  width: 52px; height: 72px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+}
+.fp-deck-cover-ph {
+  width: 52px; height: 72px; border-radius: 6px; flex-shrink: 0;
+  background: var(--bs-tertiary-bg); display: flex; align-items: center;
+  justify-content: center; font-size: 1.4rem; color: var(--bs-secondary-color);
+}
+.fp-actions { display: flex; gap: .5rem; align-items: center; }
+.fp-btn {
+  border: none; background: none; cursor: pointer; display: flex; align-items: center;
+  gap: .3rem; font-size: .8rem; color: var(--bs-secondary-color);
+  padding: .2rem .45rem; border-radius: 6px; transition: background .1s, color .1s;
+}
+.fp-btn:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+.fp-btn.liked { color: var(--bs-primary); }
+.fp-comments-section { margin-top: .65rem; }
+.fp-comment {
+  display: flex; gap: .5rem; align-items: flex-start;
+  padding: .35rem 0; border-bottom: 1px solid var(--bs-border-color-translucent);
+  font-size: .82rem;
+}
+.fp-comment:last-of-type { border-bottom: none; }
+.fp-comment-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: var(--primary); color: #fff; font-size: .62rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.fp-comment-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.fp-comment-body { flex: 1; min-width: 0; }
+.fp-comment-author { font-weight: 600; margin-right: .3rem; }
+.fp-comment-time { font-size: .68rem; color: var(--bs-secondary-color); margin-left: .35rem; }
+.fp-comment-input { display: flex; gap: .5rem; margin-top: .55rem; align-items: center; }
+.fp-comment-input input {
+  flex: 1; font-size: .82rem; padding: .3rem .6rem;
+  border: 1px solid var(--bs-border-color); border-radius: 20px;
+  background: var(--bs-body-bg); color: var(--bs-body-color);
+  outline: none;
+}
+.fp-comment-input input:focus { border-color: var(--primary); }
+.fp-comment-input button {
+  border: none; background: var(--primary); color: #fff;
+  border-radius: 50%; width: 28px; height: 28px; display: flex;
+  align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0; font-size: .85rem;
+}
+.fp-comment-input button:hover { opacity: .85; }
+
+/* ── Deck card block (now an <a> link) ───────────────────────────────────── */
+.fp-deck-card {
+  text-decoration: none; color: inherit;
+  transition: border-color .15s, box-shadow .15s;
+  cursor: pointer;
+}
+.fp-deck-card:hover { border-color: var(--primary, #2563eb); box-shadow: 0 2px 8px rgba(0,0,0,.15); color: inherit; }
+
+/* ── Feed card thumbnail (clickable) ─────────────────────────────────────── */
+.fp-card-thumb { cursor: pointer; transition: transform .15s, box-shadow .15s; }
+.fp-card-thumb:hover { transform: scale(1.06); box-shadow: 0 4px 12px rgba(0,0,0,.3); z-index: 2; }
+
+/* ── Feed card preview dialog ────────────────────────────────────────────── */
+dialog#feedCardDlg {
+  border: none; border-radius: 14px; padding: 0;
+  width: min(520px, 96vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  background: var(--bs-body-bg); color: var(--bs-body-color);
+}
+dialog#feedCardDlg::backdrop { background: rgba(0,0,0,.55); }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="lead mb-0">Welcome back, <strong>{{ current_user.username }}</strong>!</p>
+  </div>
+  <span class="text-muted" style="font-size:.8rem">
+    <i class="bi bi-calendar3 me-1"></i>
+    <span id="todayDate"></span>
+  </span>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Flying cards stage (background atmospheric element) #}
+{% if get_setting('enable_flying_cards', 'true') == 'true' %}
+<div id="flying-cards-stage" aria-hidden="true"></div>
+{% endif %}
+
+{# ── MTG Stat Cards ────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+
+  <div class="col-6 col-xl-3">
+    <a href="{{ url_for('collection.box') }}" class="mtg-stat" style="text-decoration:none;color:inherit">
+      <div class="mtg-stat-icon bg-primary bg-opacity-15 text-primary">
+        <i class="bi bi-collection-fill"></i>
+      </div>
+      <div>
+        <div class="mtg-stat-value text-primary">{{ box_qty }}</div>
+        <div class="mtg-stat-label">Cards in Box</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <a href="{{ url_for('decks.index') }}" class="mtg-stat" style="text-decoration:none;color:inherit">
+      <div class="mtg-stat-icon bg-purple bg-opacity-15" style="background:rgba(124,58,237,.12);color:#7c3aed">
+        <i class="bi bi-layers-fill"></i>
+      </div>
+      <div>
+        <div class="mtg-stat-value" style="color:#7c3aed">{{ deck_count }}</div>
+        <div class="mtg-stat-label">Active Deck{% if deck_count != 1 %}s{% endif %}</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <a href="{{ url_for('cards.search', source='value') }}" class="mtg-stat" style="text-decoration:none;color:inherit">
+      <div class="mtg-stat-icon bg-success bg-opacity-15 text-success">
+        <i class="bi bi-currency-dollar"></i>
+      </div>
+      <div>
+        <div class="mtg-stat-value text-success">${{ "%.2f"|format(collection_value) }}</div>
+        <div class="mtg-stat-label">Collection Value</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <a href="{{ url_for('friends.index') }}" class="mtg-stat" style="text-decoration:none;color:inherit">
+      <div class="mtg-stat-icon bg-info bg-opacity-15 text-info">
+        <i class="bi bi-people-fill"></i>
+      </div>
+      <div>
+        <div class="mtg-stat-value text-info">{{ friend_count }}</div>
+        <div class="mtg-stat-label">Friend{% if friend_count != 1 %}s{% endif %}</div>
+      </div>
+    </a>
+  </div>
+
+</div>
+
+{# ── Quick Links ──────────────────────────────────────────────────────────── #}
+<div class="quick-links mb-4">
+  <a href="{{ url_for('collection.box') }}" class="btn btn-outline-primary">
+    <i class="bi bi-collection me-1"></i>My Box
+  </a>
+  <a href="{{ url_for('collection.import_cards') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-box-arrow-in-down me-1"></i>Import Cards
+  </a>
+  <a href="{{ url_for('decks.new_deck') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-plus-lg me-1"></i>New Deck
+  </a>
+  <a href="{{ url_for('decks.index') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-layers me-1"></i>My Decks
+  </a>
+  {% if friend_count > 0 %}
+  <a href="{{ url_for('friends.index') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-people me-1"></i>Friends
+  </a>
+  {% endif %}
+</div>
+
+{# ── Community Spotlight (full width) ─────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-stars me-2 text-warning"></i>Community Spotlight</span>
+    <small class="text-muted" id="spotlightMeta"></small>
+  </div>
+  <div class="card-body d-flex flex-column gap-3">
+
+    {# ── Skeleton (shown while loading) ── #}
+    <div id="spotlightSkel" class="sl-grid">
+      <div style="display:flex;gap:1.35rem;align-items:flex-start">
+        <div class="skel-pulse" style="flex-shrink:0;width:210px;aspect-ratio:63/88;border-radius:11px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:.65rem;padding-top:.2rem">
+          <div class="skel-pulse" style="height:1.3rem;width:68%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:.8rem;width:45%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:.8rem;width:55%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:5.5rem;border-radius:6px;margin-top:.2rem"></div>
+          <div class="skel-pulse" style="height:.9rem;width:38%;border-radius:6px"></div>
+        </div>
+      </div>
+      <div class="sl-second-only" style="display:flex;gap:1.35rem;align-items:flex-start">
+        <div class="skel-pulse" style="flex-shrink:0;width:210px;aspect-ratio:63/88;border-radius:11px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:.65rem;padding-top:.2rem">
+          <div class="skel-pulse" style="height:1.3rem;width:58%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:.8rem;width:40%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:.8rem;width:50%;border-radius:6px"></div>
+          <div class="skel-pulse" style="height:5.5rem;border-radius:6px;margin-top:.2rem"></div>
+          <div class="skel-pulse" style="height:.9rem;width:32%;border-radius:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Two-card grid (hidden until loaded) ── #}
+    <div id="slGrid" class="sl-grid" style="display:none">
+
+      {# LEFT card #}
+      <div class="sl-wrap" id="slWrap">
+        <div class="sl-img-col">
+          <img id="sl-img" src="" alt="">
+          <div id="sl-foil" class="sl-foil-shimmer" style="display:none"></div>
+        </div>
+        <div class="sl-info-col">
+          <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+            <div id="sl-name" class="sl-name"></div>
+            <span id="sl-rarity" class="badge" style="font-size:.72rem;flex-shrink:0;padding:.3rem .6rem"></span>
+          </div>
+          <div id="sl-set"  class="text-muted mb-1" style="font-size:.8rem"></div>
+          <div id="sl-type" class="mb-1"            style="font-size:.84rem"></div>
+          <div id="sl-mana" class="text-muted mb-2" style="font-size:.8rem"></div>
+          <div style="border-top:1px solid var(--bs-border-color);padding-top:.6rem;margin-bottom:.75rem">
+            <div id="sl-oracle" class="sl-oracle"></div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span id="sl-price"      class="badge bg-success"  style="font-size:.73rem;padding:.3rem .65rem"></span>
+            <span id="sl-foil-price" class="badge"             style="font-size:.73rem;padding:.3rem .65rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff;display:none"></span>
+            <span id="sl-location"   class="badge bg-secondary" style="font-size:.73rem;padding:.3rem .65rem"></span>
+          </div>
+        </div>
+      </div>
+
+      {# RIGHT card — only visible on lg+ screens #}
+      <div class="sl-wrap sl-second-only" id="slWrap2">
+        <div class="sl-img-col">
+          <img id="sl-img2" src="" alt="">
+          <div id="sl-foil2" class="sl-foil-shimmer" style="display:none"></div>
+        </div>
+        <div class="sl-info-col">
+          <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+            <div id="sl-name2" class="sl-name"></div>
+            <span id="sl-rarity2" class="badge" style="font-size:.72rem;flex-shrink:0;padding:.3rem .6rem"></span>
+          </div>
+          <div id="sl-set2"  class="text-muted mb-1" style="font-size:.8rem"></div>
+          <div id="sl-type2" class="mb-1"            style="font-size:.84rem"></div>
+          <div id="sl-mana2" class="text-muted mb-2" style="font-size:.8rem"></div>
+          <div style="border-top:1px solid var(--bs-border-color);padding-top:.6rem;margin-bottom:.75rem">
+            <div id="sl-oracle2" class="sl-oracle"></div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span id="sl-price2"      class="badge bg-success"  style="font-size:.73rem;padding:.3rem .65rem"></span>
+            <span id="sl-foil-price2" class="badge"             style="font-size:.73rem;padding:.3rem .65rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff;display:none"></span>
+            <span id="sl-location2"   class="badge bg-secondary" style="font-size:.73rem;padding:.3rem .65rem"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /slGrid #}
+
+    {# Prev / progress bar / Next #}
+    <div id="slNav" class="d-flex align-items-center gap-2" style="display:none!important">
+      <button id="slPrev" class="btn btn-sm btn-outline-secondary" style="padding:.18rem .55rem;font-size:.95rem;line-height:1" title="Previous">‹</button>
+      <div class="sl-progress-rail">
+        <div id="slProgressBar" class="sl-progress-bar"></div>
+      </div>
+      <button id="slNext" class="btn btn-sm btn-outline-secondary" style="padding:.18rem .55rem;font-size:.95rem;line-height:1" title="Next">›</button>
+    </div>
+
+    {# ── Empty state ── #}
+    <div id="spotlightEmpty" class="text-center py-4" style="display:none">
+      <i class="bi bi-collection" style="font-size:2.5rem;opacity:.2"></i>
+      <p class="text-muted mt-2 mb-0" style="font-size:.85rem">
+        No cards to spotlight yet. Import some cards to get started!
+      </p>
+    </div>
+
+  </div>
+</div>
+
+{# ── Recent Activity ─────────────────────────────────────────────────────────── #}
+{% if get_setting('show_recent_activity', 'true') == 'true' %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-activity me-2 text-primary"></i>Recent Activity</span>
+  </div>
+  <div style="overflow-y:auto;max-height:260px">
+    {% if activity %}
+    {% for log in activity %}
+    {# Resolve icon + colour + label from action #}
+    {% if log.action == 'collection_import' %}
+      {% set act_icon = 'bi-box-arrow-in-down' %}
+      {% set act_bg   = 'rgba(22,163,74,.12)' %}
+      {% set act_fg   = '#16a34a' %}
+      {% set act_verb = 'imported cards' %}
+    {% elif log.action == 'deck_created' %}
+      {% set act_icon = 'bi-layers-fill' %}
+      {% set act_bg   = 'rgba(37,99,235,.12)' %}
+      {% set act_fg   = '#2563eb' %}
+      {% set act_verb = 'created a deck' %}
+    {% elif log.action == 'deck_updated' %}
+      {% set act_icon = 'bi-pencil-fill' %}
+      {% set act_bg   = 'rgba(8,145,178,.12)' %}
+      {% set act_fg   = '#0891b2' %}
+      {% set act_verb = 'updated a deck' %}
+    {% elif log.action == 'deck_deleted' %}
+      {% set act_icon = 'bi-trash3-fill' %}
+      {% set act_bg   = 'rgba(220,38,38,.12)' %}
+      {% set act_fg   = '#dc2626' %}
+      {% set act_verb = 'deleted a deck' %}
+    {% elif log.action == 'card_moved' %}
+      {% set act_icon = 'bi-arrow-left-right' %}
+      {% set act_bg   = 'rgba(217,119,6,.12)' %}
+      {% set act_fg   = '#d97706' %}
+      {% set act_verb = 'moved a card' %}
+    {% elif log.action == 'card_transferred' %}
+      {% set act_icon = 'bi-send-fill' %}
+      {% set act_bg   = 'rgba(124,58,237,.12)' %}
+      {% set act_fg   = '#7c3aed' %}
+      {% set act_verb = 'transferred a card' %}
+    {% else %}
+      {% set act_icon = 'bi-circle' %}
+      {% set act_bg   = 'rgba(107,114,128,.12)' %}
+      {% set act_fg   = '#6b7280' %}
+      {% set act_verb = log.action %}
+    {% endif %}
+
+    <div class="activity-item">
+      <div class="act-icon" style="background:{{ act_bg }};color:{{ act_fg }}">
+        <i class="bi {{ act_icon }}"></i>
+      </div>
+      <div class="act-body">
+        <div>
+          <span class="act-who">
+            {% if log.user and log.user.id == current_user.id %}You
+            {% elif log.user %}{{ log.user.username }}
+            {% else %}Someone{% endif %}
+          </span>
+          <span class="act-what"> {{ act_verb }}</span>
+        </div>
+        {% if log.details %}
+        <div class="act-what" style="font-size:.72rem;margin-top:1px">
+          {{ log.details | truncate(60) }}
+        </div>
+        {% endif %}
+        <div class="act-when">{{ log.created_at.strftime('%b %d · %H:%M') }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="text-center py-4">
+      <i class="bi bi-journal-x" style="font-size:2rem;opacity:.2"></i>
+      <p class="text-muted mt-2 mb-0" style="font-size:.82rem">
+        No MTG activity yet. Start by importing some cards!
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Social Feed ─────────────────────────────────────────────────────────── #}
+<div class="card mb-4" id="feedCard">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-people-fill me-2 text-primary"></i>Social Feed</span>
+    <small id="feedStatus" class="text-muted"></small>
+  </div>
+  <div id="feedContainer">
+    {# Posts injected by JS #}
+    <div id="feedSkel" class="p-3">
+      {% for _ in range(3) %}
+      <div style="display:flex;gap:.75rem;margin-bottom:1.25rem">
+        <div class="skel-pulse" style="width:38px;height:38px;border-radius:50%;flex-shrink:0"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:.45rem">
+          <div class="skel-pulse" style="height:.8rem;width:35%;border-radius:4px"></div>
+          <div class="skel-pulse" style="height:.75rem;width:65%;border-radius:4px"></div>
+          <div class="skel-pulse" style="height:5rem;border-radius:8px"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div id="feedList"></div>
+    <div id="feedEmpty" class="text-center py-5 text-muted" style="display:none">
+      <i class="bi bi-people" style="font-size:2.5rem;opacity:.2"></i>
+      <p class="mt-2 mb-0" style="font-size:.85rem">No activity yet. Add some cards or create a deck!</p>
+    </div>
+    <div id="feedLoadMore" class="p-3 text-center" style="display:none">
+      <button class="btn btn-sm btn-outline-secondary" id="feedLoadMoreBtn">
+        <i class="bi bi-arrow-down me-1"></i>Load more
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── Admin System Stats ────────────────────────────────────────────────────── #}
+{# ── Feed card preview dialog ──────────────────────────────────────────────── #}
+<dialog id="feedCardDlg" aria-label="Card preview">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.25rem .75rem;border-bottom:1px solid var(--bs-border-color)">
+    <h5 class="mb-0 fw-bold" id="fcdName"></h5>
+    <button type="button" class="btn-close" id="fcdClose"></button>
+  </div>
+  <div style="padding:1rem 1.25rem;max-height:72vh;overflow-y:auto">
+    <div class="d-flex gap-3">
+      <div style="flex-shrink:0;width:170px">
+        <img id="fcdImage" src="" alt=""
+             style="width:100%;border-radius:9px;box-shadow:0 4px 14px rgba(0,0,0,.3);display:block">
+        <div id="fcdFoilBadge" style="display:none;text-align:center;margin-top:.4rem">
+          <span class="badge" style="background:linear-gradient(135deg,#f59e0b,#ec4899,#8b5cf6);font-size:.65rem">✦ FOIL</span>
+        </div>
+        <div id="fcdSet" style="margin-top:.45rem;font-size:.7rem;color:var(--bs-secondary-color);text-align:center;line-height:1.3"></div>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div id="fcdType" class="text-muted mb-1" style="font-size:.8rem"></div>
+        <div id="fcdMana" class="mb-2" style="font-size:.9rem;font-weight:600"></div>
+        <div id="fcdOracle"
+             style="font-size:.8rem;line-height:1.65;white-space:pre-wrap;max-height:150px;overflow-y:auto;
+                    background:var(--bs-tertiary-bg);border-radius:6px;padding:.5rem .65rem;margin-bottom:.75rem"></div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span id="fcdRarity" class="badge" style="font-size:.68rem"></span>
+          <div id="fcdPrices" class="d-flex gap-2 flex-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:.75rem 1.25rem;border-top:1px solid var(--bs-border-color);display:flex;justify-content:flex-end">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="fcdCancel">Close</button>
+  </div>
+</dialog>
+
+{% if admin_stats %}
+<div class="card">
+  <div class="card-header">
+    <i class="bi bi-gear-fill me-2 text-secondary"></i>System Overview
+    <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary float-end">
+      Admin Panel <i class="bi bi-arrow-right ms-1"></i>
+    </a>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-6 col-md-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-people-fill text-primary" style="font-size:1.2rem"></i>
+          <div>
+            <div class="fw-bold">{{ admin_stats.total_users }}</div>
+            <div class="text-muted" style="font-size:.72rem">Total Users</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-person-check-fill text-success" style="font-size:1.2rem"></i>
+          <div>
+            <div class="fw-bold">{{ admin_stats.active_users }}</div>
+            <div class="text-muted" style="font-size:.72rem">Active Users</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-shield-fill text-warning" style="font-size:1.2rem"></i>
+          <div>
+            <div class="fw-bold">{{ admin_stats.total_roles }}</div>
+            <div class="text-muted" style="font-size:.72rem">Roles</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-sliders-fill text-info" style="font-size:1.2rem"></i>
+          <div>
+            <div class="fw-bold">{{ admin_stats.total_settings }}</div>
+            <div class="text-muted" style="font-size:.72rem">Settings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Today's date ──────────────────────────────────────────────────────────── */
+document.getElementById('todayDate').textContent = new Date().toLocaleDateString(
+  undefined, { weekday:'long', month:'long', day:'numeric' }
+);
+
+/* ── Community Spotlight ──────────────────────────────────────────────────── */
+(async function () {
+  var skel  = document.getElementById('spotlightSkel');
+  var grid  = document.getElementById('slGrid');
+  var empty = document.getElementById('spotlightEmpty');
+  var meta  = document.getElementById('spotlightMeta');
+  var nav   = document.getElementById('slNav');
+
+  var CYCLE_MS     = {{ [[get_setting('spotlight_cycle_seconds', '9') | int, 3] | max, 60] | min * 1000 }};
+  var FADE_MS      = 350;
+  var allCards     = [];
+  var leftIdx      = 0;   // index of card currently in left slot
+  var rightIdx     = 1;   // index of card currently in right slot
+  var slotTurn     = 0;   // 0 = next auto-advance refreshes left, 1 = right
+  var cycleTimer   = null;
+  var rarityColors = { mythic:'#e05c07', rare:'#a88b2e', uncommon:'#7c9db4', common:'#555' };
+
+  /* Returns true when the viewport is wide enough to show both card slots */
+  function _isWide() { return window.innerWidth >= 992; }
+
+  /* Populate a single card slot. sfx is '' for left, '2' for right. */
+  function _populateSlot(card, sfx) {
+    var img = document.getElementById('sl-img' + sfx);
+    if (!img) return;
+    img.src = card.image || card.image_small || '';
+    img.alt = card.name  || '';
+    document.getElementById('sl-foil' + sfx).style.display = card.is_foil ? '' : 'none';
+
+    document.getElementById('sl-name' + sfx).textContent = card.name || '—';
+    document.getElementById('sl-set'  + sfx).textContent = [card.set_code, card.set_name].filter(Boolean).join(' — ');
+    document.getElementById('sl-type' + sfx).textContent = card.type_line || '';
+
+    var manaHtml = card.mana_cost ? renderMana(card.mana_cost) : '';
+    var manaEl   = document.getElementById('sl-mana' + sfx);
+    manaEl.innerHTML     = manaHtml;
+    manaEl.style.display = manaHtml ? '' : 'none';
+
+    document.getElementById('sl-oracle' + sfx).innerHTML = renderMana(card.oracle_text || '');
+
+    var rb = document.getElementById('sl-rarity' + sfx);
+    rb.textContent      = card.rarity ? card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1) : '';
+    rb.style.background = rarityColors[card.rarity] || '#555';
+    rb.style.color      = '#fff';
+
+    var priceEl = document.getElementById('sl-price' + sfx);
+    if (card.usd != null) {
+      priceEl.textContent   = '$' + parseFloat(card.usd).toFixed(2);
+      priceEl.style.display = '';
+    } else {
+      priceEl.style.display = 'none';
+    }
+    var foilEl = document.getElementById('sl-foil-price' + sfx);
+    if (card.usd_foil != null) {
+      foilEl.textContent   = '✦ $' + parseFloat(card.usd_foil).toFixed(2);
+      foilEl.style.display = '';
+    } else {
+      foilEl.style.display = 'none';
+    }
+    document.getElementById('sl-location' + sfx).textContent = card.location || card.owner || '';
+  }
+
+  /* Fade a single slot wrap, swap its content, fade back in */
+  function _fadeSlot(sfx, newCard) {
+    var wrap = document.getElementById(sfx === '' ? 'slWrap' : 'slWrap2');
+    if (!wrap) return;
+    wrap.style.opacity = '0';
+    setTimeout(function () {
+      _populateSlot(newCard, sfx);
+      wrap.style.opacity = '1';
+    }, FADE_MS);
+  }
+
+  /* Update the meta counter text */
+  function _updateMeta() {
+    if (_isWide() && allCards.length > 1) {
+      meta.textContent = (leftIdx + 1) + ' & ' + (rightIdx + 1) + ' of ' + allCards.length;
+    } else {
+      meta.textContent = (leftIdx + 1) + ' of ' + allCards.length;
+    }
+  }
+
+  /* Reset the progress bar animation */
+  function _resetProgress() {
+    var pb = document.getElementById('slProgressBar');
+    pb.style.transition = 'none';
+    pb.style.width      = '0%';
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        pb.style.transition = 'width ' + CYCLE_MS + 'ms linear';
+        pb.style.width      = '100%';
+      });
+    });
+  }
+
+  /* Show both slots at once — used for initial load and manual prev/next.
+     Fades the whole grid if not instant. */
+  function showBoth(lIdx, rIdx, instant) {
+    leftIdx  = ((lIdx % allCards.length) + allCards.length) % allCards.length;
+    rightIdx = ((rIdx % allCards.length) + allCards.length) % allCards.length;
+    function populate() {
+      _populateSlot(allCards[leftIdx], '');
+      if (_isWide() && allCards.length > 1) _populateSlot(allCards[rightIdx], '2');
+      _updateMeta();
+      _resetProgress();
+    }
+    if (instant) {
+      populate();
+      grid.style.opacity = '1';
+    } else {
+      grid.style.opacity = '0';
+      setTimeout(function () { populate(); grid.style.opacity = '1'; }, 400);
+    }
+  }
+
+  /* Auto-advance: in wide mode with 2+ cards, alternate which slot refreshes.
+     In narrow mode (or only 1 card), just cycle the left slot. */
+  function advanceAuto() {
+    if (!_isWide() || allCards.length < 2) {
+      leftIdx = (leftIdx + 1) % allCards.length;
+      _fadeSlot('', allCards[leftIdx]);
+      _updateMeta();
+      _resetProgress();
+      return;
+    }
+    if (slotTurn === 0) {
+      // Refresh the LEFT slot with the card that comes after rightIdx
+      leftIdx = (rightIdx + 1) % allCards.length;
+      _fadeSlot('', allCards[leftIdx]);
+    } else {
+      // Refresh the RIGHT slot with the card that comes after leftIdx
+      rightIdx = (leftIdx + 1) % allCards.length;
+      _fadeSlot('2', allCards[rightIdx]);
+    }
+    slotTurn = 1 - slotTurn;
+    _updateMeta();
+    _resetProgress();
+  }
+
+  /* Manual prev/next: swap both slots simultaneously and reset alternation */
+  function advance(dir) {
+    var newLeft  = ((leftIdx + dir) % allCards.length + allCards.length) % allCards.length;
+    var newRight = (newLeft + 1) % allCards.length;
+    showBoth(newLeft, newRight, false);
+    slotTurn = 0;
+    clearInterval(cycleTimer);
+    if (allCards.length > 1) {
+      cycleTimer = setInterval(advanceAuto, CYCLE_MS);
+    }
+  }
+
+  try {
+    var res  = await fetch('/api/spotlight-cards');
+    allCards = await res.json();
+    skel.style.display = 'none';
+
+    if (!allCards.length) {
+      empty.style.display = '';
+      return;
+    }
+
+    grid.style.display = '';
+    showBoth(0, 1, true);
+
+    if (allCards.length > 1) {
+      nav.style.cssText = '';   // removes display:none!important
+      document.getElementById('slPrev').addEventListener('click', function () { advance(-1); });
+      document.getElementById('slNext').addEventListener('click', function () { advance(1);  });
+      cycleTimer = setInterval(advanceAuto, CYCLE_MS);
+    }
+  } catch (err) {
+    skel.style.display  = 'none';
+    empty.style.display = '';
+  }
+})();
+</script>
+
+{% if get_setting('enable_flying_cards', 'true') == 'true' %}
+<script src="{{ url_for('static', filename='js/flying_cards.js') }}"></script>
+{% endif %}
+
+<script>
+/* ── Feed card preview dialog ─────────────────────────────────────────────── */
+(function () {
+  var dlg = document.getElementById('feedCardDlg');
+  if (!dlg) return;
+  document.getElementById('fcdClose').addEventListener('click',  function () { dlg.close(); });
+  document.getElementById('fcdCancel').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+})();
+
+window._feedCardCache = {};
+
+window._openFeedCardDlg = function (c) {
+  var dlg = document.getElementById('feedCardDlg');
+  if (!dlg) return;
+  var rarityColors = { mythic:'#e05c07', rare:'#a88b2e', uncommon:'#7c9db4', common:'#555' };
+
+  // Header name
+  document.getElementById('fcdName').textContent = c.name || '—';
+
+  // Image
+  var img = document.getElementById('fcdImage');
+  img.src = c.image_normal || c.image_small || '';
+  img.alt = c.name || '';
+
+  // Foil badge
+  document.getElementById('fcdFoilBadge').style.display = c.is_foil ? '' : 'none';
+
+  // Set info (below image)
+  var setEl = document.getElementById('fcdSet');
+  var setParts = [c.set_code, c.set_name].filter(Boolean);
+  setEl.textContent   = setParts.join(' — ');
+  setEl.style.display = setParts.length ? '' : 'none';
+
+  // Type line
+  document.getElementById('fcdType').textContent = c.type_line || '';
+
+  // Mana cost
+  var manaEl = document.getElementById('fcdMana');
+  if (c.mana_cost) {
+    manaEl.innerHTML    = window.renderMana ? window.renderMana(c.mana_cost) : _esc(c.mana_cost);
+    manaEl.style.display = '';
+  } else {
+    manaEl.style.display = 'none';
+  }
+
+  // Oracle text
+  var oracleEl = document.getElementById('fcdOracle');
+  if (c.oracle_text) {
+    oracleEl.innerHTML    = window.renderMana ? window.renderMana(c.oracle_text) : _esc(c.oracle_text);
+    oracleEl.style.display = '';
+  } else {
+    oracleEl.style.display = 'none';
+  }
+
+  // Rarity badge
+  var rarEl = document.getElementById('fcdRarity');
+  if (c.rarity) {
+    rarEl.textContent      = c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1);
+    rarEl.style.background = rarityColors[c.rarity] || '#555';
+    rarEl.style.color      = '#fff';
+    rarEl.style.display    = '';
+  } else {
+    rarEl.style.display = 'none';
+  }
+
+  // Prices
+  var pricesEl = document.getElementById('fcdPrices');
+  pricesEl.innerHTML = '';
+  if (c.usd != null)
+    pricesEl.innerHTML += '<span class="badge bg-success" style="font-size:.72rem">$' + parseFloat(c.usd).toFixed(2) + '</span>';
+  if (c.usd_foil != null)
+    pricesEl.innerHTML += '<span class="badge" style="font-size:.72rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦ $' + parseFloat(c.usd_foil).toFixed(2) + '</span>';
+
+  dlg.showModal();
+};
+
+// _esc is defined inside the IIFE below — hoist a lightweight version for the dialog
+function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+/* ── Social Feed ──────────────────────────────────────────────────────────── */
+(function () {
+  var CSRF   = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  var page   = 1;
+  var loading = false;
+
+  var feedSkel    = document.getElementById('feedSkel');
+  var feedList    = document.getElementById('feedList');
+  var feedEmpty   = document.getElementById('feedEmpty');
+  var feedLoadMore = document.getElementById('feedLoadMore');
+  var feedStatus  = document.getElementById('feedStatus');
+
+  var colorMap = {W:'#f9fafb',U:'#1e40af',B:'#111827',R:'#dc2626',G:'#15803d'};
+
+  function _esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _avatar(author, size) {
+    size = size || 38;
+    var s = 'width:'+size+'px;height:'+size+'px;border-radius:50%;flex-shrink:0;overflow:hidden;';
+    s += 'background:var(--primary,#0f172a);color:#fff;font-size:'+(size*.28)+'rem;font-weight:700;';
+    s += 'display:flex;align-items:center;justify-content:center;';
+    if (author.avatar) {
+      return '<div style="'+s+' padding:0"><img src="'+_esc(author.avatar)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block"></div>';
+    }
+    return '<div style="'+s+'">'+_esc(author.initials)+'</div>';
+  }
+
+  function _colorPips(ci) {
+    if (!ci) return '';
+    return ci.split('').map(function(c) {
+      return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+(colorMap[c]||'#888')+';border:1px solid rgba(0,0,0,.2);margin-right:2px"></span>';
+    }).join('');
+  }
+
+  function _renderPost(p) {
+    /* --- media section --- */
+    var media = '';
+    if (p.post_type === 'card_added' && p.cards_preview.length) {
+      var thumbs = p.cards_preview.map(function(c, idx) {
+        var tid = 'fct-' + p.id + '-' + idx;
+        window._feedCardCache[tid] = c;
+        return '<div class="fp-card-thumb" id="' + tid + '" title="' + _esc(c.name) + '">'
+             + (c.image_small ? '<img src="' + _esc(c.image_small) + '" alt="' + _esc(c.name) + '" loading="lazy" style="pointer-events:none">' : '')
+             + '</div>';
+      }).join('');
+      var extra = p.cards_total - p.cards_preview.length;
+      var more  = extra > 0 ? '<div class="fp-more-badge">+'+extra+'</div>' : '';
+      media = '<div class="fp-cards-strip">'+thumbs+more+'</div>';
+    } else if (p.deck && p.post_type !== 'card_added') {
+      var d = p.deck;
+      var deckUrl = p.is_mine
+        ? '/decks/' + d.id
+        : '/friends/' + p.author.id + '/decks';
+      var coverHtml = d.cover_image
+        ? '<img class="fp-deck-cover" src="'+_esc(d.cover_image)+'" alt="" loading="lazy">'
+        : '<div class="fp-deck-cover-ph"><i class="bi bi-layers-fill"></i></div>';
+      media = '<a href="' + _esc(deckUrl) + '" class="fp-deck-card">' + coverHtml
+            + '<div><div style="font-weight:700;font-size:.88rem;margin-bottom:.2rem">'+_esc(d.name)+'</div>'
+            + '<div style="font-size:.75rem;color:var(--bs-secondary-color)">'+_esc(d.format)+' \u00b7 '+d.total_quantity+' cards</div>'
+            + (d.color_identity ? '<div style="margin-top:.3rem">'+_colorPips(d.color_identity)+'</div>' : '')
+            + '</div>'
+            + '<div style="margin-left:auto;flex-shrink:0;font-size:.8rem;color:var(--bs-secondary-color);padding-left:.5rem"><i class="bi bi-arrow-right-short"></i></div>'
+            + '</a>';
+    }
+
+    /* --- comments HTML --- */
+    var commentsHtml = p.comments.map(function(c) {
+      var delBtn = c.is_mine
+        ? '<button class="fp-del-comment" data-id="'+c.id+'" style="margin-left:auto;border:none;background:none;color:var(--bs-secondary-color);cursor:pointer;font-size:.7rem;padding:.1rem .25rem" title="Delete">\u00d7</button>'
+        : '';
+      return '<div class="fp-comment" id="fc-'+c.id+'">'
+           + _avatar(c.author, 26)
+           + '<div class="fp-comment-body"><span class="fp-comment-author">'+_esc(c.author.username)+'</span>'+_esc(c.body)
+           + '<span class="fp-comment-time">'+_esc(c.relative_time)+'</span></div>'
+           + delBtn+'</div>';
+    }).join('');
+
+    var likeClass = p.liked_by_me ? 'fp-btn liked' : 'fp-btn';
+    var typeLabel = p.post_type === 'card_added' ? 'Cards' : p.post_type === 'deck_created' ? 'New Deck' : 'Deck Update';
+    var typeBadgeCls = p.post_type === 'deck_created' ? 'bg-primary' : p.post_type === 'deck_updated' ? 'bg-info' : 'bg-success';
+
+    return '<div class="fp" id="fp-'+p.id+'">'
+      + '<div class="fp-header">'
+      + _avatar(p.author, 38)
+      + '<div><div class="fp-author">'+_esc(p.author.username)+'</div><div class="fp-time">'+_esc(p.relative_time)+'</div></div>'
+      + '<div class="ms-auto"><span class="badge '+typeBadgeCls+' bg-opacity-75" style="font-size:.62rem">'+typeLabel+'</span></div>'
+      + '</div>'
+      + '<div class="fp-body"><strong>'+_esc(p.author.username)+'</strong> '+_esc(p.body)+'</div>'
+      + (media ? '<div class="fp-media">'+media+'</div>' : '')
+      + '<div class="fp-actions">'
+      + '<button class="'+likeClass+' fp-like-btn" data-id="'+p.id+'" data-liked="'+(p.liked_by_me?1:0)+'">'
+      + '<i class="bi bi-hand-thumbs-up'+(p.liked_by_me?'-fill':'')+'"></i> <span class="fp-like-count">'+p.like_count+'</span></button>'
+      + '<button class="fp-btn fp-toggle-comments" data-id="'+p.id+'">'
+      + '<i class="bi bi-chat"></i> <span class="fp-comment-count">'+p.comment_count+'</span></button>'
+      + '</div>'
+      + '<div class="fp-comments-section" id="fpc-'+p.id+'" style="display:none">'
+      + '<div class="fp-comments-list" id="fpcl-'+p.id+'">'+commentsHtml+'</div>'
+      + '<div class="fp-comment-input"><input placeholder="Write a comment\u2026" id="fpci-'+p.id+'" maxlength="500"><button data-id="'+p.id+'"><i class="bi bi-send-fill"></i></button></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function loadFeed(reset) {
+    if (loading) return;
+    loading = true;
+    if (reset) { page = 1; feedList.innerHTML = ''; feedLoadMore.style.display = 'none'; }
+    feedStatus.textContent = 'Loading\u2026';
+
+    fetch('/api/feed?page='+page)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        feedSkel.style.display = 'none';
+        feedStatus.textContent = '';
+
+        if (!data.posts.length && page === 1) {
+          feedEmpty.style.display = '';
+        } else {
+          feedEmpty.style.display = 'none';
+          feedList.insertAdjacentHTML('beforeend', data.posts.map(_renderPost).join(''));
+          feedLoadMore.style.display = data.has_more ? '' : 'none';
+          if (data.has_more) page++;
+        }
+        loading = false;
+      })
+      .catch(function(){
+        feedSkel.style.display = 'none';
+        feedStatus.textContent = 'Failed to load feed.';
+        loading = false;
+      });
+  }
+
+  /* Card thumbnail click → preview dialog */
+  feedList.addEventListener('click', function(e) {
+    var thumb = e.target.closest('.fp-card-thumb[id]');
+    if (!thumb) return;
+    var card = window._feedCardCache[thumb.id];
+    if (card && window._openFeedCardDlg) window._openFeedCardDlg(card);
+  });
+
+  /* Like toggle */
+  feedList.addEventListener('click', function(e) {
+    var btn = e.target.closest('.fp-like-btn');
+    if (!btn) return;
+    var postId = btn.dataset.id;
+    fetch('/api/feed/'+postId+'/like', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.success) return;
+      var liked = data.liked;
+      btn.classList.toggle('liked', liked);
+      btn.dataset.liked = liked ? 1 : 0;
+      btn.querySelector('i').className = 'bi bi-hand-thumbs-up' + (liked ? '-fill' : '');
+      btn.querySelector('.fp-like-count').textContent = data.like_count;
+    });
+  });
+
+  /* Toggle comments */
+  feedList.addEventListener('click', function(e) {
+    var btn = e.target.closest('.fp-toggle-comments');
+    if (!btn) return;
+    var section = document.getElementById('fpc-'+btn.dataset.id);
+    if (section) {
+      var isHidden = section.style.display === 'none';
+      section.style.display = isHidden ? '' : 'none';
+      if (isHidden) {
+        var input = document.getElementById('fpci-'+btn.dataset.id);
+        if (input) input.focus();
+      }
+    }
+  });
+
+  /* Submit comment via button click */
+  feedList.addEventListener('click', function(e) {
+    var btn = e.target.closest('.fp-comment-input button');
+    if (!btn) return;
+    _submitComment(btn.dataset.id);
+  });
+
+  /* Submit comment via Enter key */
+  feedList.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var input = e.target.closest('.fp-comment-input input');
+    if (!input) return;
+    var section = input.closest('.fp-comments-section');
+    if (!section) return;
+    var postId = section.id.replace('fpc-', '');
+    _submitComment(postId);
+  });
+
+  function _submitComment(postId) {
+    var input = document.getElementById('fpci-'+postId);
+    if (!input) return;
+    var body = input.value.trim();
+    if (!body) return;
+    input.disabled = true;
+
+    fetch('/api/feed/'+postId+'/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify({ body: body }),
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.success) { input.disabled = false; return; }
+      var c = data.comment;
+      var delBtn = '<button class="fp-del-comment" data-id="'+c.id+'" style="margin-left:auto;border:none;background:none;color:var(--bs-secondary-color);cursor:pointer;font-size:.7rem;padding:.1rem .25rem" title="Delete">\u00d7</button>';
+      var html = '<div class="fp-comment" id="fc-'+c.id+'">'
+               + _avatar(c.author, 26)
+               + '<div class="fp-comment-body"><span class="fp-comment-author">'+_esc(c.author.username)+'</span>'+_esc(c.body)
+               + '<span class="fp-comment-time">'+_esc(c.relative_time)+'</span></div>'
+               + delBtn+'</div>';
+      var list = document.getElementById('fpcl-'+postId);
+      if (list) list.insertAdjacentHTML('beforeend', html);
+      input.value = '';
+      input.disabled = false;
+      /* bump comment count */
+      var countEl = document.querySelector('#fp-'+postId+' .fp-comment-count');
+      if (countEl) countEl.textContent = parseInt(countEl.textContent||0) + 1;
+    })
+    .catch(function(){ input.disabled = false; });
+  }
+
+  /* Delete comment */
+  feedList.addEventListener('click', function(e) {
+    var btn = e.target.closest('.fp-del-comment');
+    if (!btn) return;
+    var commentId = btn.dataset.id;
+    var commentEl = document.getElementById('fc-'+commentId);
+    var postEl    = btn.closest('.fp');
+    fetch('/api/feed/comment/'+commentId, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': CSRF },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (data.success && commentEl) {
+        commentEl.remove();
+        if (postEl) {
+          var countEl = postEl.querySelector('.fp-comment-count');
+          if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||0) - 1);
+        }
+      }
+    });
+  });
+
+  /* Load more button */
+  var loadMoreBtn = document.getElementById('feedLoadMoreBtn');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', function(){
+      loadFeed(false);
+    });
+  }
+
+  /* Initial load */
+  loadFeed(true);
+})();
+</script>
+{% endblock %}

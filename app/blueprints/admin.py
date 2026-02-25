@@ -1,0 +1,337 @@
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+from flask_login import login_required, current_user
+from markupsafe import Markup, escape
+
+from app.extensions import db
+from app.models.user import User
+from app.models.role import Role
+from app.models.permission import Permission
+from app.models.setting import Setting
+from app.models.audit import AuditLog
+from app.forms.admin import UserCreateForm, UserEditForm, RoleForm, FriendGroupForm
+from app.utils.helpers import log_audit
+from app.utils.settings import get_settings_by_category
+
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+# ── Blueprint-wide access guard ─────────────────────────────────────────────
+@admin_bp.before_request
+@login_required
+def require_admin_access():
+    """Every admin route requires authentication + admin/full_access permission."""
+    if not current_user.is_authenticated:
+        return redirect(url_for("auth.login", next=request.url))
+    if not (current_user.is_admin or current_user.has_permission("admin.full_access")):
+        abort(403)
+
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+@admin_bp.route("/")
+def index():
+    stats = {
+        "total_users":      User.query.count(),
+        "active_users":     User.query.filter_by(is_active=True).count(),
+        "total_roles":      Role.query.count(),
+        "total_permissions": Permission.query.count(),
+        "total_settings":   Setting.query.count(),
+        "total_logs":       AuditLog.query.count(),
+    }
+    recent_logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(15).all()
+    return render_template("admin/index.html", stats=stats, recent_logs=recent_logs, active_page="admin")
+
+
+# ── Users ─────────────────────────────────────────────────────────────────────
+@admin_bp.route("/users")
+def users():
+    page   = request.args.get("page", 1, type=int)
+    search = request.args.get("search", "").strip()
+    query  = User.query
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            db.or_(User.username.ilike(like), User.email.ilike(like))
+        )
+    pagination = query.order_by(User.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    return render_template(
+        "admin/users.html",
+        users=pagination,
+        search=search,
+        active_page="admin_users",
+    )
+
+
+@admin_bp.route("/users/new", methods=["GET", "POST"])
+def user_create():
+    form = UserCreateForm()
+    form.role_id.choices = [(0, "— No Role —")] + [(r.id, r.name) for r in Role.query.order_by(Role.name)]
+
+    if form.validate_on_submit():
+        user = User(
+            username=form.username.data.strip(),
+            email=form.email.data.strip().lower(),
+            is_admin=form.is_admin.data,
+            is_active=form.is_active.data,
+            role_id=form.role_id.data or None,
+        )
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.flush()
+        log_audit("created", "user", resource_id=user.id, details=f"username={user.username}")
+        db.session.commit()
+        flash(Markup(f"User <strong>{escape(user.username)}</strong> created successfully."), "success")
+        return redirect(url_for("admin.users"))
+
+    return render_template(
+        "admin/user_form.html", form=form, user=None,
+        title="Create User", active_page="admin_users",
+    )
+
+
+@admin_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+def user_edit(user_id: int):
+    user = db.get_or_404(User, user_id)
+    form = UserEditForm(user=user, obj=user)
+    form.role_id.choices = [(0, "— No Role —")] + [(r.id, r.name) for r in Role.query.order_by(Role.name)]
+
+    if request.method == "GET":
+        form.role_id.data = user.role_id or 0
+
+    if form.validate_on_submit():
+        user.username  = form.username.data.strip()
+        user.email     = form.email.data.strip().lower()
+        user.is_admin  = form.is_admin.data
+        user.is_active = form.is_active.data
+        user.role_id   = form.role_id.data or None
+        if form.password.data:
+            user.set_password(form.password.data)
+        log_audit("updated", "user", resource_id=user.id, details=f"username={user.username}")
+        db.session.commit()
+        flash(Markup(f"User <strong>{escape(user.username)}</strong> updated."), "success")
+        return redirect(url_for("admin.users"))
+
+    return render_template(
+        "admin/user_form.html", form=form, user=user,
+        title="Edit User", active_page="admin_users",
+    )
+
+
+@admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
+def user_delete(user_id: int):
+    user = db.get_or_404(User, user_id)
+    if user.id == current_user.id:
+        flash("You cannot delete your own account.", "danger")
+        return redirect(url_for("admin.users"))
+    username = user.username
+    log_audit("deleted", "user", resource_id=user.id, details=f"username={username}")
+    db.session.delete(user)
+    db.session.commit()
+    flash(Markup(f"User <strong>{escape(username)}</strong> deleted."), "success")
+    return redirect(url_for("admin.users"))
+
+
+@admin_bp.route("/users/<int:user_id>/toggle", methods=["POST"])
+def user_toggle(user_id: int):
+    user = db.get_or_404(User, user_id)
+    if user.id == current_user.id:
+        flash("You cannot deactivate your own account.", "danger")
+        return redirect(url_for("admin.users"))
+    user.is_active = not user.is_active
+    status = "activated" if user.is_active else "deactivated"
+    log_audit(status, "user", resource_id=user.id)
+    db.session.commit()
+    flash(Markup(f"User <strong>{escape(user.username)}</strong> {escape(status)}."), "success")
+    return redirect(url_for("admin.users"))
+
+
+# ── Roles ─────────────────────────────────────────────────────────────────────
+@admin_bp.route("/roles")
+def roles():
+    all_roles = Role.query.order_by(Role.name).all()
+    return render_template("admin/roles.html", roles=all_roles, active_page="admin_roles")
+
+
+@admin_bp.route("/roles/new", methods=["GET", "POST"])
+def role_create():
+    form = RoleForm()
+    all_permissions = Permission.query.order_by(Permission.name).all()
+    form.permissions.choices = [(p.id, p.name) for p in all_permissions]
+
+    if form.validate_on_submit():
+        role = Role(name=form.name.data.strip(), description=form.description.data)
+        if form.permissions.data:
+            role.permissions = Permission.query.filter(
+                Permission.id.in_(form.permissions.data)
+            ).all()
+        db.session.add(role)
+        db.session.flush()
+        log_audit("created", "role", resource_id=role.id, details=f"name={role.name}")
+        db.session.commit()
+        flash(Markup(f"Role <strong>{escape(role.name)}</strong> created."), "success")
+        return redirect(url_for("admin.roles"))
+
+    return render_template(
+        "admin/role_form.html", form=form, role=None,
+        all_permissions=all_permissions, title="Create Role", active_page="admin_roles",
+    )
+
+
+@admin_bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
+def role_edit(role_id: int):
+    role = db.get_or_404(Role, role_id)
+    form = RoleForm(obj=role)
+    all_permissions = Permission.query.order_by(Permission.name).all()
+    form.permissions.choices = [(p.id, p.name) for p in all_permissions]
+
+    if request.method == "GET":
+        form.permissions.data = [p.id for p in role.permissions]
+
+    if form.validate_on_submit():
+        role.name        = form.name.data.strip()
+        role.description = form.description.data
+        role.permissions = Permission.query.filter(
+            Permission.id.in_(form.permissions.data or [])
+        ).all()
+        log_audit("updated", "role", resource_id=role.id, details=f"name={role.name}")
+        db.session.commit()
+        flash(Markup(f"Role <strong>{escape(role.name)}</strong> updated."), "success")
+        return redirect(url_for("admin.roles"))
+
+    return render_template(
+        "admin/role_form.html", form=form, role=role,
+        all_permissions=all_permissions, title="Edit Role", active_page="admin_roles",
+    )
+
+
+@admin_bp.route("/roles/<int:role_id>/delete", methods=["POST"])
+def role_delete(role_id: int):
+    role = db.get_or_404(Role, role_id)
+    if role.users.count() > 0:
+        flash(Markup(f"Cannot delete <strong>{escape(role.name)}</strong> — it has assigned users."), "danger")
+        return redirect(url_for("admin.roles"))
+    name = role.name
+    log_audit("deleted", "role", resource_id=role.id, details=f"name={name}")
+    db.session.delete(role)
+    db.session.commit()
+    flash(Markup(f"Role <strong>{escape(name)}</strong> deleted."), "success")
+    return redirect(url_for("admin.roles"))
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+@admin_bp.route("/settings", methods=["GET", "POST"])
+def settings():
+    categorized = get_settings_by_category()
+
+    if request.method == "POST":
+        # Update every setting that appears in the form
+        for key in request.form:
+            if key.startswith("csrf_"):
+                continue
+            s = Setting.query.filter_by(key=key).first()
+            if s:
+                s.value = request.form[key]
+
+        # Unchecked booleans are absent from POST data – force them to 'false'
+        for settings_list in categorized.values():
+            for s in settings_list:
+                if s.type == "boolean" and s.key not in request.form:
+                    s.value = "false"
+
+        log_audit("updated", "settings", details="bulk update")
+        db.session.commit()
+        flash("Settings saved successfully.", "success")
+        return redirect(url_for("admin.settings"))
+
+    return render_template("admin/settings.html", categorized=categorized, active_page="admin_settings")
+
+
+# ── Friend Groups ─────────────────────────────────────────────────────────────
+
+@admin_bp.route("/friend-groups")
+def friend_groups():
+    from app.models.friend_group import FriendGroup
+    groups = FriendGroup.query.order_by(FriendGroup.name).all()
+    return render_template(
+        "admin/friend_groups/index.html",
+        groups=groups,
+        active_page="admin_friend_groups",
+    )
+
+
+@admin_bp.route("/friend-groups/new", methods=["GET", "POST"])
+def friend_group_create():
+    from app.models.friend_group import FriendGroup
+    form = FriendGroupForm()
+    all_users = User.query.order_by(User.username).all()
+    form.member_ids.choices = [(u.id, u.username) for u in all_users]
+
+    if form.validate_on_submit():
+        group = FriendGroup(name=form.name.data.strip(), created_by=current_user.id)
+        if form.member_ids.data:
+            group.members = User.query.filter(User.id.in_(form.member_ids.data)).all()
+        db.session.add(group)
+        db.session.flush()
+        log_audit("created", "friend_group", group.id, f"name={group.name}")
+        db.session.commit()
+        flash(f"Friend group '{group.name}' created.", "success")
+        return redirect(url_for("admin.friend_groups"))
+
+    return render_template(
+        "admin/friend_groups/form.html",
+        form=form, group=None,
+        title="New Friend Group",
+        active_page="admin_friend_groups",
+    )
+
+
+@admin_bp.route("/friend-groups/<int:group_id>/edit", methods=["GET", "POST"])
+def friend_group_edit(group_id: int):
+    from app.models.friend_group import FriendGroup
+    group = db.get_or_404(FriendGroup, group_id)
+    form  = FriendGroupForm(obj=group)
+    all_users = User.query.order_by(User.username).all()
+    form.member_ids.choices = [(u.id, u.username) for u in all_users]
+
+    if request.method == "GET":
+        form.member_ids.data = [m.id for m in group.members]
+
+    if form.validate_on_submit():
+        group.name    = form.name.data.strip()
+        group.members = User.query.filter(User.id.in_(form.member_ids.data or [])).all()
+        log_audit("updated", "friend_group", group.id, f"name={group.name}")
+        db.session.commit()
+        flash(f"Friend group '{group.name}' updated.", "success")
+        return redirect(url_for("admin.friend_groups"))
+
+    return render_template(
+        "admin/friend_groups/form.html",
+        form=form, group=group,
+        title=f"Edit — {group.name}",
+        active_page="admin_friend_groups",
+    )
+
+
+@admin_bp.route("/friend-groups/<int:group_id>/delete", methods=["POST"])
+def friend_group_delete(group_id: int):
+    from app.models.friend_group import FriendGroup
+    group = db.get_or_404(FriendGroup, group_id)
+    name  = group.name
+    log_audit("deleted", "friend_group", group.id, f"name={name}")
+    db.session.delete(group)
+    db.session.commit()
+    flash(f"Friend group '{name}' deleted.", "success")
+    return redirect(url_for("admin.friend_groups"))
+
+
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+@admin_bp.route("/audit")
+def audit():
+    page = request.args.get("page", 1, type=int)
+    logs = (
+        AuditLog.query
+        .order_by(AuditLog.created_at.desc())
+        .paginate(page=page, per_page=50, error_out=False)
+    )
+    return render_template("admin/audit.html", logs=logs, active_page="admin_audit")

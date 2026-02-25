@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi {{ 'bi-person-plus' if not user else 'bi-person-gear' }} me-2 text-primary"></i>{{ title }}</h1>
+    <p class="lead">{% if user %}Editing {{ user.username }}{% else %}Fill in the details below{% endif %}</p>
+  </div>
+  <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Users
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">{{ title }}</div>
+      <div class="card-body p-4">
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+
+          {# Username + Email #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label" for="username">{{ form.username.label.text }}</label>
+              {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""),
+                              id="username", placeholder="e.g. jsmith") }}
+              {% for e in form.username.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="email">{{ form.email.label.text }}</label>
+              {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""),
+                            id="email", placeholder="user@example.com") }}
+              {% for e in form.email.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+          </div>
+
+          {# Password #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label" for="password">{{ form.password.label.text }}</label>
+              {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""),
+                               id="password",
+                               placeholder="{{ '8+ characters' if not user else 'Leave blank to keep current' }}") }}
+              {% for e in form.password.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+              <div class="form-text">Minimum 8 characters.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="confirm_password">{{ form.confirm_password.label.text }}</label>
+              {{ form.confirm_password(class="form-control" + (" is-invalid" if form.confirm_password.errors else ""),
+                                       id="confirm_password", placeholder="Repeat password") }}
+              {% for e in form.confirm_password.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+          </div>
+
+          {# Role #}
+          <div class="mb-3">
+            <label class="form-label" for="role_id">{{ form.role_id.label.text }}</label>
+            {{ form.role_id(class="form-select" + (" is-invalid" if form.role_id.errors else ""), id="role_id") }}
+            {% for e in form.role_id.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+
+          {# Flags #}
+          <div class="row g-3 mb-4">
+            <div class="col-auto">
+              <div class="form-check form-switch">
+                {{ form.is_active(class="form-check-input", id="is_active", role="switch") }}
+                <label class="form-check-label" for="is_active">Active Account</label>
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="form-check form-switch">
+                {{ form.is_admin(class="form-check-input", id="is_admin", role="switch") }}
+                <label class="form-check-label" for="is_admin">
+                  Administrator
+                  <span class="badge bg-primary bg-opacity-75 ms-1" style="font-size:.65rem">Full Access</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            {{ form.submit(class="btn btn-primary") }}
+            <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>
+  <li class="breadcrumb-item"><a href="{{ url_for('decks.index') }}">My Decks</a></li>
+  {% if deck %}
+  <li class="breadcrumb-item"><a href="{{ url_for('decks.detail', deck_id=deck.id) }}">{{ deck.name }}</a></li>
+  {% endif %}
+  <li class="breadcrumb-item active">{{ title }}</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1>{{ title }}</h1>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body">
+        <form method="post" novalidate id="deckForm">
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.name.label(class="form-label") }}
+            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else "")) }}
+            {% for err in form.name.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.description.label(class="form-label") }}
+            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else "")) }}
+            {% for err in form.description.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              {{ form.format.label(class="form-label") }}
+              {{ form.format(class="form-select") }}
+            </div>
+            <div class="col-sm-6 d-flex align-items-end pb-1">
+              <div class="form-check">
+                {{ form.is_visible_to_friends(class="form-check-input") }}
+                {{ form.is_visible_to_friends.label(class="form-check-label") }}
+                <div class="form-text">Friends in your groups can view this deck (read-only).</div>
+              </div>
+            </div>
+          </div>
+
+          {% if not deck %}
+          {# ── Import section (new deck only) ─────────────────────────────── #}
+          <hr class="my-3">
+          <p class="fw-semibold mb-2" style="font-size:.88rem">
+            <i class="bi bi-box-arrow-in-down me-1 text-primary"></i>Import Cards
+          </p>
+
+          {# Radio group #}
+          <div class="d-flex gap-3 flex-wrap mb-3">
+            {% for subfield in form.import_type %}
+            <div class="form-check">
+              {{ subfield(class="form-check-input", id="import_" ~ subfield.data,
+                          onchange="updateImportUI()") }}
+              <label class="form-check-label" for="import_{{ subfield.data }}">
+                {{ subfield.label.text }}
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+
+          {# Decklist textarea #}
+          <div id="import-decklist-section" style="display:none" class="mb-3">
+            {{ form.decklist_text.label(class="form-label") }}
+            {{ form.decklist_text(class="form-control font-monospace" +
+               (" is-invalid" if form.decklist_text.errors else ""),
+               style="font-size:.82rem") }}
+            {% for err in form.decklist_text.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {# Moxfield export paste #}
+          <div id="import-moxfield-section" style="display:none" class="mb-3">
+            {{ form.moxfield_text.label(class="form-label") }}
+            {{ form.moxfield_text(class="form-control font-monospace" +
+               (" is-invalid" if form.moxfield_text.errors else ""),
+               style="font-size:.82rem") }}
+            {% for err in form.moxfield_text.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+            <div class="form-text">
+              In Moxfield, open your deck then choose
+              <strong>Export → Text</strong> and paste the result here.
+              Sideboard cards are automatically detected.
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="d-flex justify-content-between align-items-center pt-2">
+            {% if deck %}
+            <a href="{{ url_for('decks.detail', deck_id=deck.id) }}" class="btn btn-outline-secondary">Cancel</a>
+            {% else %}
+            <a href="{{ url_for('decks.index') }}" class="btn btn-outline-secondary">Cancel</a>
+            {% endif %}
+            {{ form.submit(class="btn btn-primary") }}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not deck %}
+{# ── Import progress overlay ── #}
+<div id="deckImportOverlay"
+     class="d-none position-fixed top-0 start-0 end-0 bottom-0"
+     style="background:rgba(0,0,0,.55);z-index:1055">
+  <div class="d-flex h-100 align-items-center justify-content-center px-3">
+    <div class="card shadow-lg" style="min-width:340px;max-width:480px;width:100%">
+      <div class="card-header d-flex align-items-center gap-2">
+        <div class="spinner-border spinner-border-sm text-primary" id="deckProgressSpinner"></div>
+        <strong id="deckProgressTitle" class="text-truncate">Creating deck and importing cards…</strong>
+      </div>
+      <div class="card-body pb-3">
+        <div class="progress mb-2" style="height:8px">
+          <div class="progress-bar progress-bar-striped progress-bar-animated"
+               id="deckProgressBar" role="progressbar" style="width:0%"></div>
+        </div>
+        <div class="d-flex justify-content-between" style="font-size:.82rem">
+          <span id="deckProgressCard" class="text-muted text-truncate pe-2">Starting…</span>
+          <span id="deckProgressCount" class="fw-semibold flex-shrink-0"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not deck %}
+<script>
+function updateImportUI() {
+  var val  = document.querySelector('input[name="import_type"]:checked');
+  var type = val ? val.value : 'empty';
+  document.getElementById('import-decklist-section').style.display =
+    type === 'decklist' ? '' : 'none';
+  document.getElementById('import-moxfield-section').style.display =
+    type === 'moxfield' ? '' : 'none';
+}
+document.addEventListener('DOMContentLoaded', updateImportUI);
+
+// Streaming deck creation
+(function () {
+  var form = document.getElementById("deckForm");
+  if (!form) return;
+
+  form.addEventListener("submit", function (e) {
+    var importType = document.querySelector('input[name="import_type"]:checked');
+    if (!importType || importType.value === "empty") return; // normal submit
+
+    e.preventDefault();
+
+    // Capture FormData BEFORE disabling elements — disabled inputs are excluded from FormData
+    var formData = new FormData(form);
+
+    var overlay = document.getElementById("deckImportOverlay");
+    overlay.classList.remove("d-none");
+    overlay.style.display = "flex"; // ensure flex even after d-none removal
+    form.querySelectorAll("button, input, select, textarea").forEach(function (el) {
+      el.disabled = true;
+    });
+
+    fetch("{{ url_for('decks.new_deck_stream') }}", {
+      method: "POST",
+      body: formData,
+    }).then(function (resp) {
+      if (!resp.ok) {
+        setDeckError("Server error (" + resp.status + ")");
+        return;
+      }
+      var reader  = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer  = "";
+      var total   = 0;
+
+      function pump() {
+        reader.read().then(function (chunk) {
+          if (chunk.done) return;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var lines = buffer.split("\n");
+          buffer = lines.pop();
+          lines.forEach(function (line) {
+            if (line.trim()) {
+              try { handleDeckEvent(JSON.parse(line)); } catch (ex) { /* skip */ }
+            }
+          });
+          pump();
+        }).catch(function () { setDeckError("Connection lost"); });
+      }
+      pump();
+    }).catch(function () { setDeckError("Network error"); });
+  });
+
+  function handleDeckEvent(evt) {
+    var bar     = document.getElementById("deckProgressBar");
+    var count   = document.getElementById("deckProgressCount");
+    var card    = document.getElementById("deckProgressCard");
+    var title   = document.getElementById("deckProgressTitle");
+    var spinner = document.getElementById("deckProgressSpinner");
+
+    if (evt.type === "deck_created") {
+      title.textContent = "Deck created — importing cards…";
+    } else if (evt.type === "start") {
+      count.textContent = "0 / " + (evt.total || 0);
+      card.textContent  = "Looking up cards on Scryfall…";
+    } else if (evt.type === "progress") {
+      var pct = evt.total > 0 ? Math.round((evt.current / evt.total) * 100) : 50;
+      bar.style.width   = pct + "%";
+      count.textContent = evt.current + " / " + evt.total;
+      card.textContent  = (evt.ok ? "✓ " : "✗ ") + evt.card;
+    } else if (evt.type === "done") {
+      bar.style.width = "100%";
+      bar.classList.remove("progress-bar-animated", "progress-bar-striped");
+      spinner.style.display = "none";
+
+      var msg = "Done";
+      if (evt.successes) msg += " — " + evt.successes + " card(s) imported";
+      if (evt.failures)  msg += ", " + evt.failures + " failed";
+      title.textContent = msg;
+      card.textContent  = "Redirecting…";
+
+      if (evt.redirect_url) {
+        setTimeout(function () { window.location.href = evt.redirect_url; }, 900);
+      }
+    } else if (evt.type === "error") {
+      setDeckError(evt.message);
+    }
+  }
+
+  function setDeckError(msg) {
+    document.getElementById("deckProgressBar").classList.add("bg-danger");
+    document.getElementById("deckProgressBar").classList.remove(
+      "progress-bar-animated", "progress-bar-striped"
+    );
+    document.getElementById("deckProgressSpinner").style.display = "none";
+    document.getElementById("deckProgressTitle").textContent = "Error: " + msg;
+    // Re-enable form so user can try again
+    document.getElementById("deckForm").querySelectorAll(
+      "button, input, select, textarea"
+    ).forEach(function (el) { el.disabled = false; });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

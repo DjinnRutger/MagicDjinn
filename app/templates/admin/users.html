@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Users — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-people me-2 text-primary"></i>Users</h1>
+    <p class="lead">{{ users.total }} user{{ 's' if users.total != 1 }} total</p>
+  </div>
+  <a href="{{ url_for('admin.user_create') }}" class="btn btn-primary">
+    <i class="bi bi-person-plus me-1"></i>New User
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Search bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" action="{{ url_for('admin.users') }}" class="d-flex gap-2">
+      <div class="input-group input-group-sm" style="max-width:380px">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" name="search" class="form-control" placeholder="Search username or email…"
+               value="{{ search }}">
+        {% if search %}
+        <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">
+          <i class="bi bi-x"></i>
+        </a>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary">Search</button>
+    </form>
+  </div>
+</div>
+
+{# ── Users table ── #}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Type</th>
+          <th>Last Login</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users.items %}
+        <tr>
+          <td class="text-muted" style="font-size:.78rem">{{ user.id }}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="user-avatar" style="width:28px;height:28px;font-size:.65rem">{{ user.get_initials() }}</div>
+              <span class="fw-semibold" style="font-size:.875rem">{{ user.username }}</span>
+            </div>
+          </td>
+          <td class="text-muted" style="font-size:.82rem">{{ user.email }}</td>
+          <td style="font-size:.82rem">
+            {% if user.role %}<span class="badge bg-secondary bg-opacity-75">{{ user.role.name }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            <span class="status-dot {{ 'active' if user.is_active else 'inactive' }}"></span>
+            <small>{{ 'Active' if user.is_active else 'Disabled' }}</small>
+          </td>
+          <td>
+            {% if user.is_admin %}<span class="badge bg-primary bg-opacity-75">Admin</span>
+            {% else %}<span class="badge bg-light text-dark border">User</span>{% endif %}
+          </td>
+          <td class="text-muted" style="font-size:.78rem">
+            {{ user.last_login.strftime('%b %d, %Y') if user.last_login else '—' }}
+          </td>
+          <td>
+            <div class="action-buttons justify-content-end">
+              <a href="{{ url_for('admin.user_edit', user_id=user.id) }}"
+                 class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+
+              {% if user.id != current_user.id %}
+              <form method="POST" action="{{ url_for('admin.user_toggle', user_id=user.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="btn btn-sm btn-icon {{ 'btn-outline-warning' if user.is_active else 'btn-outline-success' }}"
+                        title="{{ 'Deactivate' if user.is_active else 'Activate' }}"
+                        data-confirm="Are you sure you want to {{ 'deactivate' if user.is_active else 'activate' }} {{ user.username }}?">
+                  <i class="bi {{ 'bi-person-dash' if user.is_active else 'bi-person-check' }}"></i>
+                </button>
+              </form>
+
+              <form method="POST" action="{{ url_for('admin.user_delete', user_id=user.id) }}"
+                    data-confirm="Permanently delete {{ user.username }}? This cannot be undone.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger btn-icon" title="Delete">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="empty-state">
+            <i class="bi bi-people"></i>
+            {% if search %}No users match "{{ search }}".{% else %}No users yet.{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Pagination #}
+  {% if users.pages > 1 %}
+  <div class="card-footer d-flex justify-content-between align-items-center py-2">
+    <small class="text-muted">
+      Showing {{ users.items|length }} of {{ users.total }} users
+    </small>
+    <nav>
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if not users.has_prev }}">
+          <a class="page-link" href="{{ url_for('admin.users', page=users.prev_num, search=search) }}">‹</a>
+        </li>
+        {% for p in users.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+          {% if p %}
+          <li class="page-item {{ 'active' if p == users.page }}">
+            <a class="page-link" href="{{ url_for('admin.users', page=p, search=search) }}">{{ p }}</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if not users.has_next }}">
+          <a class="page-link" href="{{ url_for('admin.users', page=users.next_num, search=search) }}">›</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Inline CSRF token helper for forms without a WTForms hidden_tag()
+document.querySelectorAll('form').forEach(function(f){
+  if(!f.querySelector('[name="csrf_token"]')){
+    var meta=document.querySelector('meta[name="csrf-token"]');
+    if(meta){var i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=meta.content;f.prepend(i);}
+  }
+});
+</script>
+{% endblock %}

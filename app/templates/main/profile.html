@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+  <li class="breadcrumb-item active">Profile</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-person-circle me-2"></i>My Profile</h1>
+    <p class="lead">Manage your account and appearance preferences.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  {# ── User info card ── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <i class="bi bi-person me-2"></i>Account Info
+      </div>
+      <div class="card-body text-center py-4">
+        {# Avatar #}
+        <div class="user-avatar mx-auto mb-3"
+             style="width:72px;height:72px;font-size:1.6rem;border-radius:50%">
+          {{ current_user.get_initials() }}
+        </div>
+        <h5 class="fw-bold mb-1">{{ current_user.username }}</h5>
+        <p class="text-muted small mb-3">{{ current_user.email }}</p>
+
+        {% if current_user.is_admin %}
+        <span class="badge bg-primary mb-1">Admin</span>
+        {% endif %}
+        {% if current_user.role %}
+        <span class="badge bg-secondary mb-1">{{ current_user.role.name }}</span>
+        {% endif %}
+
+        <hr class="my-3">
+        <div class="d-flex justify-content-between text-muted small">
+          <span>Member since</span>
+          <span>{{ current_user.created_at.strftime('%b %d, %Y') if current_user.created_at else 'N/A' }}</span>
+        </div>
+        {% if current_user.last_login %}
+        <div class="d-flex justify-content-between text-muted small mt-1">
+          <span>Last login</span>
+          <span>{{ current_user.last_login.strftime('%b %d, %Y %H:%M') }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Theme selector card ── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <i class="bi bi-palette me-2"></i>Appearance
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">Choose how LocalVibe looks for you. Your preference is saved to this browser and synced to your account.</p>
+        <div class="row g-2">
+          {# Light #}
+          <div class="col-4">
+            <div class="theme-preview-tile tile-light {% if current_user.theme == 'light' %}active{% endif %}"
+                 data-theme-val="light" role="button" tabindex="0" aria-label="Light theme">
+              <div class="tile-preview"></div>
+              <div class="tile-label">Light</div>
+            </div>
+          </div>
+          {# Dark #}
+          <div class="col-4">
+            <div class="theme-preview-tile tile-dark {% if current_user.theme == 'dark' %}active{% endif %}"
+                 data-theme-val="dark" role="button" tabindex="0" aria-label="Dark theme">
+              <div class="tile-preview"></div>
+              <div class="tile-label">Dark</div>
+            </div>
+          </div>
+          {# Terminal #}
+          <div class="col-4">
+            <div class="theme-preview-tile tile-terminal {% if current_user.theme == 'terminal' %}active{% endif %}"
+                 data-theme-val="terminal" role="button" tabindex="0" aria-label="Terminal theme">
+              <div class="tile-preview"></div>
+              <div class="tile-label">Terminal</div>
+            </div>
+          </div>
+        </div>
+        <p class="text-muted mt-3 mb-0" style="font-size:.75rem">
+          <i class="bi bi-info-circle me-1"></i>
+          Current: <strong id="current-theme-name">{{ current_user.theme | capitalize }}</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Security card ── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <i class="bi bi-shield-lock me-2"></i>Security
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">Change your login password. Leave "New Password" blank to keep your current password.</p>
+        <form method="POST" action="{{ url_for('main.profile') }}" novalidate>
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.current_password.label(class="form-label") }}
+            {{ form.current_password(class="form-control" + (" is-invalid" if form.current_password.errors else ""),
+                                     placeholder="Current password", autocomplete="current-password") }}
+            {% for err in form.current_password.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.new_password.label(class="form-label") }}
+            {{ form.new_password(class="form-control" + (" is-invalid" if form.new_password.errors else ""),
+                                 placeholder="New password (min 8 chars)", autocomplete="new-password") }}
+            {% for err in form.new_password.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-4">
+            {{ form.confirm_password.label(class="form-label") }}
+            {{ form.confirm_password(class="form-control" + (" is-invalid" if form.confirm_password.errors else ""),
+                                     placeholder="Confirm new password", autocomplete="new-password") }}
+            {% for err in form.confirm_password.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {{ form.submit(class="btn btn-primary w-100") }}
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const THEME_NAMES = { light: "Light", dark: "Dark", terminal: "Terminal" };
+
+  document.querySelectorAll(".theme-preview-tile").forEach(function (tile) {
+    // Keyboard support
+    tile.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tile.click(); }
+    });
+
+    tile.addEventListener("click", function () {
+      const theme = tile.dataset.themeVal;
+
+      // Visual active state
+      document.querySelectorAll(".theme-preview-tile").forEach(function (t) {
+        t.classList.remove("active");
+      });
+      tile.classList.add("active");
+
+      // Update label
+      const nameEl = document.getElementById("current-theme-name");
+      if (nameEl) nameEl.textContent = THEME_NAMES[theme] || theme;
+
+      // Apply via the global applyTheme function (defined in sidebar.js)
+      if (typeof applyTheme === "function") {
+        applyTheme(theme);
+      } else {
+        // Fallback if sidebar.js isn't loaded yet
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.setAttribute("data-bs-theme", theme === "light" ? "light" : "dark");
+        localStorage.setItem("theme", theme);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

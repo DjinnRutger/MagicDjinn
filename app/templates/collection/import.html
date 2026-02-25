@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}Import Cards — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block head %}
+<style>
+.import-layout { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+@media (min-width: 992px) { .import-layout { grid-template-columns: 1fr 340px; } }
+
+.format-hint code {
+  display: block;
+  font-size: .78rem;
+  padding: .15rem 0;
+  color: var(--bs-code-color, #d63384);
+}
+.result-success-item, .result-failure-item {
+  display: flex; align-items: flex-start; gap: .5rem;
+  padding: .35rem 0;
+  border-bottom: 1px solid var(--bs-border-color);
+  font-size: .82rem;
+}
+.result-success-item:last-child, .result-failure-item:last-child { border-bottom: none; }
+.result-card-img {
+  width: 32px; height: 44px; object-fit: cover;
+  border-radius: 4px; flex-shrink: 0;
+  background: var(--bs-tertiary-bg);
+}
+.result-card-placeholder {
+  width: 32px; height: 44px; border-radius: 4px;
+  background: var(--bs-tertiary-bg); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; color: var(--bs-secondary-color);
+}
+
+/* Loading state on submit button */
+.btn-submitting .spinner-border { display: inline-block !important; }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>
+  <li class="breadcrumb-item"><a href="{{ url_for('collection.box') }}">My Collection</a></li>
+  <li class="breadcrumb-item active">Import</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1>Import Cards</h1>
+    <p class="lead mb-0">Paste a decklist to add cards to your Box</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if result %}
+{# ── Import Results ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-success">{{ result.success_count }}</div>
+      <div class="stat-label">Cards Added</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value {% if result.failure_count > 0 %}text-danger{% else %}text-muted{% endif %}">
+        {{ result.failure_count }}
+      </div>
+      <div class="stat-label">Failed Lines</div>
+    </div>
+  </div>
+</div>
+
+{% if result.successes %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="bi bi-check-circle-fill text-success"></i>
+    <strong>Successfully Imported ({{ result.successes | length }} lines)</strong>
+    <a href="{{ url_for('collection.box') }}" class="btn btn-sm btn-success ms-auto">
+      <i class="bi bi-collection me-1"></i>View My Collection
+    </a>
+  </div>
+  <div class="card-body py-2" style="max-height:340px;overflow-y:auto">
+    {% for s in result.successes %}
+    <div class="result-success-item">
+      {% if s.card.image_small %}
+      <img src="{{ s.card.image_small }}" alt="{{ s.card.name }}" class="result-card-img">
+      {% else %}
+      <div class="result-card-placeholder"><i class="bi bi-card-image"></i></div>
+      {% endif %}
+      <div>
+        <div class="fw-semibold">{{ s.card.name }}</div>
+        <div class="text-muted" style="font-size:.75rem">
+          {{ s.quantity }}× &nbsp;{{ s.card.set_code }}
+          {% if s.is_foil %}<span class="badge" style="font-size:.6rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦ Foil</span>{% endif %}
+          {% if not s.added %}<em class="text-info">(qty updated)</em>{% endif %}
+        </div>
+      </div>
+      <div class="ms-auto text-end" style="font-size:.75rem;color:var(--bs-secondary-color)">
+        {% if s.is_foil and s.card.usd_foil %}${{ "%.2f"|format(s.card.usd_foil) }}
+        {% elif s.card.usd %}${{ "%.2f"|format(s.card.usd) }}
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if result.failures %}
+<div class="card mb-3 border-danger border-opacity-25">
+  <div class="card-header d-flex align-items-center gap-2 text-danger">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <strong>Failed Lines ({{ result.failures | length }})</strong>
+  </div>
+  <div class="card-body py-2" style="max-height:220px;overflow-y:auto">
+    {% for f in result.failures %}
+    <div class="result-failure-item">
+      <i class="bi bi-x-circle-fill text-danger flex-shrink-0 mt-1"></i>
+      <div>
+        <code style="font-size:.78rem">{{ f.line }}</code>
+        <div class="text-muted" style="font-size:.74rem">{{ f.reason }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<hr class="my-3">
+<h5>Import More</h5>
+{% endif %}
+
+{# ── Import Form ── #}
+<div class="import-layout">
+  <div>
+    <form method="post" id="importForm">
+      {{ form.hidden_tag() }}
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-geo-alt me-1 text-secondary"></i>
+          <label for="{{ form.physical_location.id }}" class="mb-0 fw-semibold" style="font-size:.88rem">Physical Location <span class="text-muted fw-normal">(optional)</span></label>
+        </div>
+        <div class="card-body py-2">
+          {{ form.physical_location() }}
+          <div class="form-text mt-1">All cards from this import will be tagged with this location. Leave blank to skip.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          {{ form.decklist(style="font-size:.82rem;line-height:1.6;resize:vertical") }}
+          {% if form.decklist.errors %}
+          {% for err in form.decklist.errors %}
+          <div class="text-danger mt-1" style="font-size:.8rem"><i class="bi bi-exclamation-circle me-1"></i>{{ err }}</div>
+          {% endfor %}
+          {% endif %}
+        </div>
+        <div class="card-footer d-flex align-items-center justify-content-between gap-2">
+          <a href="{{ url_for('collection.box') }}" class="btn btn-outline-secondary btn-sm" id="importCancelBtn">
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary" id="importSubmitBtn">
+            <span class="spinner-border spinner-border-sm me-1 d-none" id="importSpinner"></span>
+            <i class="bi bi-cloud-download me-1" id="importIcon"></i>
+            Import Cards
+          </button>
+        </div>
+      </div>
+
+      {# ── Live progress panel (hidden until import starts) ── #}
+      <div id="importProgressPanel" class="card mt-3 d-none">
+        <div class="card-header d-flex align-items-center gap-2">
+          <div class="spinner-border spinner-border-sm text-primary" id="progressSpinner"></div>
+          <strong id="progressTitle">Importing cards…</strong>
+          <span class="ms-auto fw-semibold" style="font-size:.82rem" id="progressCount"></span>
+        </div>
+        <div class="card-body pb-2">
+          <div class="progress mb-2" style="height:8px">
+            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                 id="progressBar" role="progressbar" style="width:0%"></div>
+          </div>
+          <div id="progressCard" class="text-muted" style="font-size:.82rem;min-height:1.4em">
+            Looking up cards on Scryfall…
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  {# Sidebar: format hints #}
+  <div>
+    <div class="card">
+      <div class="card-header"><i class="bi bi-info-circle me-2 text-primary"></i>Supported Formats</div>
+      <div class="card-body format-hint">
+        <p class="text-muted mb-2" style="font-size:.8rem">One card per line. These formats are all recognized:</p>
+        <code>4 Lightning Bolt</code>
+        <code>4x Lightning Bolt</code>
+        <code>4 Lightning Bolt (M11)</code>
+        <code>4 Lightning Bolt (LEA) 1</code>
+        <code>4 Lightning Bolt *F*</code>
+        <code>4 Lightning Bolt (foil)</code>
+        <hr class="my-2">
+        <p class="text-muted mb-1" style="font-size:.8rem">These lines are <strong>skipped</strong>:</p>
+        <code style="color:var(--bs-secondary-color)">// Comments</code>
+        <code style="color:var(--bs-secondary-color)"># Also comments</code>
+        <code style="color:var(--bs-secondary-color)">SB: 4 Bolt (sideboard)</code>
+        <code style="color:var(--bs-secondary-color)">(blank lines)</code>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-lightning-charge me-2 text-warning"></i>Tips</div>
+      <div class="card-body" style="font-size:.8rem">
+        <ul class="mb-0 ps-3">
+          <li class="mb-1">Include set codes <code>(SET)</code> to pin a specific printing.</li>
+          <li class="mb-1">Add <code>*F*</code> after a card name to mark it as foil.</li>
+          <li class="mb-1">Cards already in your Box will have their <em>quantity incremented</em>, not duplicated.</li>
+          <li>Import pauses 0.1s between Scryfall lookups to stay within their rate limit.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>{# /import-layout #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById("importForm");
+  if (!form) return;
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+
+    var panel     = document.getElementById("importProgressPanel");
+    var submitBtn = document.getElementById("importSubmitBtn");
+    var icon      = document.getElementById("importIcon");
+
+    panel.classList.remove("d-none");
+    submitBtn.disabled = true;
+    icon.classList.add("d-none");
+    document.getElementById("importCancelBtn").classList.add("disabled");
+
+    var formData = new FormData(form);
+
+    fetch("{{ url_for('collection.import_stream') }}", {
+      method: "POST",
+      body: formData,
+    }).then(function (resp) {
+      if (!resp.ok) {
+        setError("Server error (" + resp.status + ")");
+        return;
+      }
+      var reader  = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer  = "";
+
+      function pump() {
+        reader.read().then(function (chunk) {
+          if (chunk.done) return;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var lines = buffer.split("\n");
+          buffer = lines.pop();
+          lines.forEach(function (line) {
+            if (line.trim()) {
+              try { handleEvent(JSON.parse(line)); } catch (ex) { /* ignore */ }
+            }
+          });
+          pump();
+        }).catch(function () { setError("Connection lost"); });
+      }
+      pump();
+    }).catch(function () { setError("Network error"); });
+  });
+
+  function handleEvent(evt) {
+    var bar     = document.getElementById("progressBar");
+    var count   = document.getElementById("progressCount");
+    var card    = document.getElementById("progressCard");
+    var title   = document.getElementById("progressTitle");
+    var spinner = document.getElementById("progressSpinner");
+    var total   = 0;
+
+    if (evt.type === "start") {
+      total = evt.total || 0;
+      count.textContent = "0 / " + total;
+      card.textContent  = "Looking up cards on Scryfall…";
+      card.className    = "text-muted";
+    } else if (evt.type === "progress") {
+      total = evt.total || 0;
+      var pct = total > 0 ? Math.round((evt.current / total) * 100) : 50;
+      bar.style.width   = pct + "%";
+      count.textContent = evt.current + " / " + total;
+      card.textContent  = (evt.ok ? "✓ " : "✗ ") + evt.card;
+      card.className    = evt.ok ? "text-success" : "text-danger";
+    } else if (evt.type === "done") {
+      bar.style.width = "100%";
+      bar.classList.remove("progress-bar-animated", "progress-bar-striped");
+      spinner.style.display = "none";
+
+      if (evt.failures === 0) {
+        bar.classList.add("bg-success");
+        title.textContent = "✓ Done! " + evt.successes + " card(s) added to your Box.";
+        card.textContent  = "Redirecting to your collection…";
+        card.className    = "text-muted";
+        setTimeout(function () {
+          window.location.href = "{{ url_for('collection.box') }}";
+        }, 1200);
+      } else {
+        bar.classList.add("bg-warning");
+        title.textContent = evt.successes + " imported, " + evt.failures + " failed.";
+        showFailures(evt.failure_details || []);
+        reenable();
+      }
+    } else if (evt.type === "error") {
+      setError(evt.message);
+    }
+  }
+
+  function setError(msg) {
+    document.getElementById("progressBar").classList.add("bg-danger");
+    document.getElementById("progressSpinner").style.display = "none";
+    document.getElementById("progressTitle").textContent = "Error: " + msg;
+    reenable();
+  }
+
+  function reenable() {
+    var btn = document.getElementById("importSubmitBtn");
+    btn.disabled = false;
+    document.getElementById("importIcon").classList.remove("d-none");
+    document.getElementById("importCancelBtn").classList.remove("disabled");
+    btn.querySelector("#importSpinner").classList.add("d-none");
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function showFailures(failures) {
+    var panel = document.getElementById("importProgressPanel");
+    var html  = '<div class="card border-danger border-opacity-25 mt-3">'
+      + '<div class="card-header text-danger d-flex align-items-center gap-2">'
+      + '<i class="bi bi-exclamation-triangle-fill"></i>'
+      + '<strong>Failed Lines (' + failures.length + ')</strong></div>'
+      + '<div class="card-body py-2" style="max-height:220px;overflow-y:auto">';
+    failures.forEach(function (f) {
+      html += '<div class="result-failure-item">'
+        + '<i class="bi bi-x-circle-fill text-danger flex-shrink-0 mt-1"></i><div>'
+        + '<code style="font-size:.78rem">' + escHtml(f.line || "") + '</code>'
+        + '<div class="text-muted" style="font-size:.74rem">' + escHtml(f.reason || "") + '</div>'
+        + '</div></div>';
+    });
+    html += '</div></div>';
+    panel.insertAdjacentHTML("beforeend", html);
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en"
+      data-bs-theme="light"
+      data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>First-Time Setup — LocalVibe</title>
+
+  {# Anti-FOUC: apply saved theme before CSS loads #}
+  <script>
+    (function(){
+      var t = localStorage.getItem("theme");
+      if (!t) { var old = localStorage.getItem("darkMode"); if (old === "true") t = "dark"; }
+      if (t) {
+        document.documentElement.setAttribute("data-theme", t);
+        document.documentElement.setAttribute("data-bs-theme", t === "light" ? "light" : "dark");
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+
+  <style>
+    :root {
+      --primary:       #2563eb;
+      --primary-hover: color-mix(in srgb, #2563eb 82%, #000);
+    }
+
+    /* ── Setup-specific overrides ───────────────────────────────────────── */
+    .setup-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .setup-card {
+      width: 100%;
+      max-width: 520px;
+      background: var(--bs-body-bg, #fff);
+      border-radius: 1rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .12);
+      padding: 2.5rem 2.75rem;
+    }
+
+    .setup-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: .3rem .75rem;
+      border-radius: 2rem;
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      color: var(--primary);
+      margin-bottom: 1.25rem;
+    }
+
+    .setup-heading {
+      font-size: 1.65rem;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: .4rem;
+    }
+
+    .setup-sub {
+      color: var(--bs-secondary-color, #6c757d);
+      font-size: .9rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .setup-divider {
+      border: none;
+      border-top: 1px solid var(--bs-border-color, #dee2e6);
+      margin: 1.5rem 0;
+    }
+
+    .step-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1.75rem;
+      display: flex;
+      gap: .5rem;
+    }
+
+    .step-list li {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bs-border-color, #dee2e6);
+    }
+
+    .step-list li.active {
+      background: var(--primary);
+    }
+
+    .setup-footer {
+      font-size: .78rem;
+      color: var(--bs-secondary-color, #6c757d);
+      text-align: center;
+      margin-top: 1.5rem;
+    }
+
+    [data-theme="dark"] .setup-card,
+    [data-bs-theme="dark"] .setup-card {
+      background: #1e2533;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
+    }
+
+    @media (max-width: 540px) {
+      .setup-card { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="setup-wrapper">
+  <div class="setup-card">
+
+    {# ── Progress strip ──────────────────────────────────────────────────── #}
+    <ul class="step-list" aria-hidden="true">
+      <li class="active"></li>
+      <li></li>
+      <li></li>
+    </ul>
+
+    {# ── Header ──────────────────────────────────────────────────────────── #}
+    <span class="setup-badge">
+      <i class="bi bi-stars"></i> First-Time Setup
+    </span>
+    <h1 class="setup-heading">Welcome to LocalVibe</h1>
+    <p class="setup-sub">
+      Let's get you set up. Create your administrator account to get started.
+      You'll be able to invite other users from the admin panel.
+    </p>
+
+    {# ── Flash messages ──────────────────────────────────────────────────── #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+      <div class="alert alert-{{ category }} py-2 mb-3" style="font-size:.85rem">
+        <i class="bi {% if category == 'danger' %}bi-exclamation-triangle-fill{% else %}bi-info-circle-fill{% endif %} me-1"></i>
+        {{ message }}
+      </div>
+      {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {# ── Setup form ──────────────────────────────────────────────────────── #}
+    <form method="POST" action="{{ url_for('setup.index') }}" novalidate>
+      {{ form.hidden_tag() }}
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="username">Username</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-person"></i></span>
+          {{ form.username(
+              class="form-control" + (" is-invalid" if form.username.errors else ""),
+              id="username",
+              placeholder="Choose a username",
+              autofocus=true
+          ) }}
+          {% for error in form.username.errors %}
+          <div class="invalid-feedback">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-text">3–64 characters. Letters, digits, <code>.</code> <code>-</code> <code>_</code> allowed.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="email">Email Address</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+          {{ form.email(
+              class="form-control" + (" is-invalid" if form.email.errors else ""),
+              id="email",
+              placeholder="you@example.com"
+          ) }}
+          {% for error in form.email.errors %}
+          <div class="invalid-feedback">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <hr class="setup-divider">
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="password">Password</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-lock"></i></span>
+          {{ form.password(
+              class="form-control" + (" is-invalid" if form.password.errors else ""),
+              id="password",
+              placeholder="At least 8 characters"
+          ) }}
+          <button class="btn btn-outline-secondary" type="button" id="toggle-pw"
+                  tabindex="-1" title="Show/hide password">
+            <i class="bi bi-eye" id="pw-eye"></i>
+          </button>
+          {% for error in form.password.errors %}
+          <div class="invalid-feedback">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold" for="confirm_password">Confirm Password</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+          {{ form.confirm_password(
+              class="form-control" + (" is-invalid" if form.confirm_password.errors else ""),
+              id="confirm_password",
+              placeholder="Repeat your password"
+          ) }}
+          {% for error in form.confirm_password.errors %}
+          <div class="invalid-feedback">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+        <i class="bi bi-check2-circle me-1"></i>Create Admin Account
+      </button>
+    </form>
+
+    <p class="setup-footer">
+      <i class="bi bi-shield-lock me-1"></i>
+      This page is only visible before the first account is created.
+    </p>
+
+  </div>
+</div>
+
+<script>
+  document.getElementById('toggle-pw')?.addEventListener('click', function () {
+    var pw  = document.getElementById('password');
+    var eye = document.getElementById('pw-eye');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      eye.className = 'bi bi-eye-slash';
+    } else {
+      pw.type = 'password';
+      eye.className = 'bi bi-eye';
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}My Decks — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block head %}
+<style>
+/* ── Format badge colours ─────────────────────────────────────────────────── */
+.fmt-Commander  { background:#7c3aed; color:#fff }
+.fmt-Standard   { background:#2563eb; color:#fff }
+.fmt-Pioneer    { background:#0891b2; color:#fff }
+.fmt-Modern     { background:#d97706; color:#fff }
+.fmt-Legacy     { background:#dc2626; color:#fff }
+.fmt-Vintage    { background:#854d0e; color:#fff }
+.fmt-Pauper     { background:#16a34a; color:#fff }
+.fmt-Casual     { background:#6b7280; color:#fff }
+.fmt-Other      { background:#6b7280; color:#fff }
+
+/* ── Deck cards ───────────────────────────────────────────────────────────── */
+.deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.deck-cover-img {
+  width: 100%; aspect-ratio: 63/88; object-fit: cover;
+  display: block; border-bottom: 1px solid var(--bs-border-color);
+}
+.deck-cover-placeholder {
+  width: 100%; aspect-ratio: 63/44; /* half-height placeholder */
+  background: var(--bs-tertiary-bg);
+  display: flex; align-items: center; justify-content: center;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+.deck-card {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bs-body-bg);
+  transition: box-shadow .2s, transform .15s;
+}
+.deck-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.deck-card-header {
+  padding: .85rem 1rem .6rem;
+  border-bottom: 1px solid var(--bs-border-color);
+  background: var(--bs-tertiary-bg);
+}
+.deck-card-name { font-size: 1rem; font-weight: 700; line-height: 1.2; }
+.deck-card-body { padding: .75rem 1rem; flex: 1; }
+.deck-card-footer {
+  padding: .6rem 1rem;
+  border-top: 1px solid var(--bs-border-color);
+  display: flex; align-items: center; gap: .5rem;
+}
+.deck-stat { display: flex; align-items: center; gap: .35rem; font-size: .82rem; }
+.color-pip {
+  display: inline-block; width: 13px; height: 13px;
+  border-radius: 50%; border: 1px solid rgba(0,0,0,.25);
+  flex-shrink: 0;
+}
+.pip-W { background:#f9faf4; }
+.pip-U { background:#0e68ab; }
+.pip-B { background:#211c20; }
+.pip-R { background:#d42126; }
+.pip-G { background:#00773c; }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0">
+  <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>
+  <li class="breadcrumb-item active">My Decks</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h1>My Decks</h1>
+    <p class="lead mb-0">{{ decks | length }} deck{% if decks | length != 1 %}s{% endif %}</p>
+  </div>
+  <a href="{{ url_for('decks.new_deck') }}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>New Deck
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if decks %}
+<div class="deck-grid">
+  {% for deck in decks %}
+
+  {% set ci = deck.color_identity or '' %}
+  <div class="deck-card">
+    <div class="deck-card-header">
+      <div class="d-flex align-items-start justify-content-between gap-2 mb-1">
+        <div class="deck-card-name">{{ deck.name }}</div>
+        <span class="badge fmt-{{ deck.format | replace(' ','') }} flex-shrink-0" style="font-size:.65rem">
+          {{ deck.format }}
+        </span>
+      </div>
+      {# Color identity pips #}
+      <div class="d-flex gap-1 align-items-center">
+        {% for c in ['W','U','B','R','G'] %}
+          {% if c in ci %}
+          <span class="color-pip pip-{{ c }}" title="{{ {'W':'White','U':'Blue','B':'Black','R':'Red','G':'Green'}[c] }}"></span>
+          {% endif %}
+        {% endfor %}
+        {% if ci == '' %}
+        <span class="text-muted" style="font-size:.72rem">Colorless</span>
+        {% endif %}
+        {% if deck.is_visible_to_friends %}
+        <i class="bi bi-eye-fill text-info ms-1" title="Visible to friends" style="font-size:.75rem"></i>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Cover card image (shown below name if set) #}
+    {% if deck.cover_card_image %}
+    <a href="{{ url_for('decks.detail', deck_id=deck.id) }}" style="display:block;overflow:hidden">
+      <img src="{{ deck.cover_card_image }}" alt="{{ deck.name }} cover card" class="deck-cover-img" loading="lazy">
+    </a>
+    {% endif %}
+
+    <div class="deck-card-body">
+      {% if deck.description %}
+      <p class="text-muted mb-2" style="font-size:.8rem;line-height:1.4">
+        {{ deck.description | truncate(100) }}
+      </p>
+      {% endif %}
+      <div class="d-flex gap-3 flex-wrap">
+        <div class="deck-stat">
+          <i class="bi bi-collection text-primary"></i>
+          <span><strong>{{ deck.total_quantity }}</strong> cards</span>
+        </div>
+        <div class="deck-stat">
+          <i class="bi bi-currency-dollar text-success"></i>
+          <span><strong>{{ deck.display_value }}</strong></span>
+        </div>
+        <div class="deck-stat text-muted">
+          <i class="bi bi-clock"></i>
+          <span>{{ deck.updated_at.strftime('%b %d') }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="deck-card-footer">
+      <a href="{{ url_for('decks.detail', deck_id=deck.id) }}" class="btn btn-sm btn-primary flex-grow-1">
+        <i class="bi bi-grid-3x3-gap me-1"></i>View Deck
+      </a>
+      <a href="{{ url_for('decks.edit_deck', deck_id=deck.id) }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-pencil"></i>
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center py-5">
+  <i class="bi bi-layers" style="font-size:3rem;opacity:.25"></i>
+  <h5 class="mt-3 fw-semibold">No decks yet</h5>
+  <p class="text-muted">Build your first deck from cards in your Box.</p>
+  <a href="{{ url_for('decks.new_deck') }}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Create a Deck
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}

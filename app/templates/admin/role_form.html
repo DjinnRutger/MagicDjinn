@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi {{ 'bi-shield-plus' if not role else 'bi-shield-gear' }} me-2 text-primary"></i>{{ title }}</h1>
+    <p class="lead">{% if role %}Editing {{ role.name }}{% else %}Define a new role and assign permissions{% endif %}</p>
+  </div>
+  <a href="{{ url_for('admin.roles') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Roles
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <form method="POST" novalidate>
+      {{ form.hidden_tag() }}
+
+      {# Role name + description #}
+      <div class="card mb-4">
+        <div class="card-header">Role Details</div>
+        <div class="card-body p-4">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="form-label" for="name">{{ form.name.label.text }} <span class="text-danger">*</span></label>
+              {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else ""),
+                           id="name", placeholder="e.g. Editor") }}
+              {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-7">
+              <label class="form-label" for="description">{{ form.description.label.text }}</label>
+              {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""),
+                                  id="description", placeholder="What can this role do?") }}
+              {% for e in form.description.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Permission matrix #}
+      <div class="card mb-4">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Permissions</span>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-xs btn-outline-secondary" id="check-all" style="font-size:.75rem;padding:.2rem .5rem">
+              Check All
+            </button>
+            <button type="button" class="btn btn-xs btn-outline-secondary" id="uncheck-all" style="font-size:.75rem;padding:.2rem .5rem">
+              Uncheck All
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-4">
+
+          {# Group permissions by namespace #}
+          {% set ns_map = namespace(groups={}) %}
+          {% for perm in all_permissions %}
+            {% set parts = perm.name.split('.') %}
+            {% set ns = parts[0] %}
+            {# Jinja2 dict building trick #}
+          {% endfor %}
+
+          {# Flat permission grid #}
+          <div class="permission-grid">
+            {% for perm in all_permissions %}
+            <label class="permission-item">
+              <input type="checkbox"
+                     name="permissions"
+                     value="{{ perm.id }}"
+                     {% if perm.id in form.permissions.data %}checked{% endif %}>
+              <div>
+                <div style="font-size:.82rem;font-weight:600">{{ perm.name }}</div>
+                {% if perm.description %}
+                <div style="font-size:.72rem;color:var(--bs-secondary-color)">{{ perm.description }}</div>
+                {% endif %}
+              </div>
+            </label>
+            {% else %}
+            <p class="text-muted">No permissions defined yet.</p>
+            {% endfor %}
+          </div>
+
+          {% for e in form.permissions.errors %}
+          <div class="text-danger mt-2" style="font-size:.82rem">{{ e }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        {{ form.submit(class="btn btn-primary") }}
+        <a href="{{ url_for('admin.roles') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('check-all')?.addEventListener('click', function(){
+    document.querySelectorAll('.permission-item input[type="checkbox"]').forEach(function(cb){ cb.checked=true; cb.dispatchEvent(new Event('change')); });
+  });
+  document.getElementById('uncheck-all')?.addEventListener('click', function(){
+    document.querySelectorAll('.permission-item input[type="checkbox"]').forEach(function(cb){ cb.checked=false; cb.dispatchEvent(new Event('change')); });
+  });
+</script>
+{% endblock %}

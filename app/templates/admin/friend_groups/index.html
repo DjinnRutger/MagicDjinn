@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Friend Groups — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h1><i class="bi bi-people-fill me-2 text-primary"></i>Friend Groups</h1>
+    <p class="lead mb-0">{{ groups | length }} group{% if groups | length != 1 %}s{% endif %}</p>
+  </div>
+  <a href="{{ url_for('admin.friend_group_create') }}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>New Group
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>Group Name</th>
+          <th>Members</th>
+          <th>Created By</th>
+          <th>Created</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for group in groups %}
+        <tr>
+          <td class="text-muted" style="font-size:.78rem">{{ group.id }}</td>
+          <td>
+            <span class="fw-semibold">{{ group.name }}</span>
+          </td>
+          <td>
+            <div class="d-flex flex-wrap gap-1 align-items-center">
+              {% for member in group.members[:6] %}
+              <span class="badge bg-secondary bg-opacity-75" title="{{ member.username }}">
+                {{ member.get_initials() }}
+              </span>
+              {% endfor %}
+              {% if group.members | length > 6 %}
+              <span class="text-muted" style="font-size:.75rem">+{{ group.members | length - 6 }} more</span>
+              {% endif %}
+              {% if not group.members %}
+              <span class="text-muted" style="font-size:.8rem">No members</span>
+              {% endif %}
+            </div>
+            <small class="text-muted">{{ group.members | length }} member{% if group.members | length != 1 %}s{% endif %}</small>
+          </td>
+          <td class="text-muted" style="font-size:.82rem">
+            {{ group.creator.username if group.creator else '—' }}
+          </td>
+          <td class="text-muted" style="font-size:.78rem">
+            {{ group.created_at.strftime('%b %d, %Y') }}
+          </td>
+          <td>
+            <div class="action-buttons justify-content-end">
+              <a href="{{ url_for('admin.friend_group_edit', group_id=group.id) }}"
+                 class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <form method="POST"
+                    action="{{ url_for('admin.friend_group_delete', group_id=group.id) }}"
+                    data-confirm="Delete '{{ group.name }}'? Members will lose access to each other's Boxes.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger btn-icon" title="Delete">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="empty-state">
+            <i class="bi bi-people"></i>
+            No friend groups yet. Create one to let users share their card boxes.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('form[data-confirm]').forEach(function(f) {
+  f.addEventListener('submit', function(e) {
+    if (!confirm(f.dataset.confirm)) e.preventDefault();
+  });
+});
+</script>
+{% endblock %}

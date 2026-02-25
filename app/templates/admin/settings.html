@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ get_setting('app_name', 'LocalVibe') }}{% endblock %}
+
+{% block breadcrumb %}
+<ol class="breadcrumb mb-0" style="font-size:.8rem">
+  <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+  <li class="breadcrumb-item active">Settings</li>
+</ol>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1><i class="bi bi-sliders me-2 text-primary"></i>App Settings</h1>
+    <p class="lead">Configure your application. Color changes preview instantly.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Category display metadata ── #}
+{% set cat_meta = {
+  'general':    {'icon': 'bi-grid-1x2',   'label': 'General',    'desc': 'Application name, footer, and display options'},
+  'appearance': {'icon': 'bi-palette',    'label': 'Appearance', 'desc': 'Colours, themes, layout, and UI scale'},
+  'security':   {'icon': 'bi-shield-lock','label': 'Security',   'desc': 'Authentication, registration, and session settings'},
+} %}
+
+{# ── Readable label from snake_case key ── #}
+{% macro label(key) %}{{ key | replace('_', ' ') | title }}{% endmacro %}
+
+<form method="POST" id="settings-form" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="settings-layout">
+
+    {# ════════════════════════════════════════
+       Left – category sidebar
+       ════════════════════════════════════════ #}
+    <nav class="settings-sidebar">
+      {% for category in categorized %}
+      {% set meta = cat_meta.get(category, {'icon': 'bi-gear', 'label': category | capitalize, 'desc': ''}) %}
+      <button type="button"
+              class="settings-cat-btn {% if loop.first %}active{% endif %}"
+              data-cat="{{ category }}">
+        <i class="bi {{ meta.icon }}"></i>
+        <span class="cat-label">{{ meta.label }}</span>
+        <span class="settings-cat-count">{{ categorized[category] | length }}</span>
+      </button>
+      {% endfor %}
+
+      <div class="settings-sidebar-footer">
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-floppy me-1"></i>Save Settings
+        </button>
+      </div>
+    </nav>
+
+    {# ════════════════════════════════════════
+       Right – settings panels
+       ════════════════════════════════════════ #}
+    <div class="settings-panels">
+      {% for category, settings_list in categorized.items() %}
+      {% set meta = cat_meta.get(category, {'icon': 'bi-gear', 'label': category | capitalize, 'desc': ''}) %}
+
+      <div class="settings-panel {% if loop.first %}active{% endif %}" id="cat-{{ category }}">
+
+        {# Panel header #}
+        <div class="settings-panel-header">
+          <div class="sph-icon"><i class="bi {{ meta.icon }}"></i></div>
+          <div>
+            <h2>{{ meta.label }}</h2>
+            <p>{{ meta.desc }}</p>
+          </div>
+        </div>
+
+        {# Settings rows #}
+        <div class="settings-card">
+          {% for s in settings_list %}
+          <div class="settings-row">
+
+            {# Label + description #}
+            <div>
+              <div class="settings-key">{{ label(s.key) }}</div>
+              {% if s.description %}
+              <div class="settings-desc">{{ s.description }}</div>
+              {% endif %}
+            </div>
+
+            {# Control #}
+            <div>
+
+              {# ── Boolean toggle ── #}
+              {% if s.type == 'boolean' %}
+              <div class="settings-switch-wrap {% if s.get_typed_value() %}is-on{% endif %}">
+                <input class="form-check-input settings-switch" type="checkbox"
+                       name="{{ s.key }}" id="s_{{ s.key }}" value="true"
+                       role="switch"
+                       {{ 'checked' if s.get_typed_value() }}>
+                <label class="settings-switch-label" for="s_{{ s.key }}">
+                  <span class="sw-on">Enabled</span>
+                  <span class="sw-off">Disabled</span>
+                </label>
+              </div>
+
+              {# ── Color picker ── #}
+              {% elif s.type == 'color' %}
+              <div class="color-swatch-wrap" data-color-key="{{ s.key }}">
+                <span class="color-swatch-btn" style="background:{{ s.value }}" title="Click to pick colour"></span>
+                <input type="color" class="color-picker-hidden"
+                       name="{{ s.key }}" id="s_{{ s.key }}" value="{{ s.value }}">
+                <input type="text" class="form-control form-control-sm color-hex-input"
+                       id="s_{{ s.key }}_text" value="{{ s.value }}"
+                       maxlength="7" spellcheck="false" placeholder="#000000">
+                <span class="color-live-badge">Live</span>
+              </div>
+
+              {# ── Number ── #}
+              {% elif s.type == 'number' %}
+              <div class="d-flex align-items-center gap-2">
+                <input type="number" class="form-control" name="{{ s.key }}"
+                       id="s_{{ s.key }}" value="{{ s.value }}" style="max-width:130px">
+                {% if 'timeout' in s.key %}
+                <span class="text-muted" style="font-size:.8rem">minutes</span>
+                {% elif 'page' in s.key %}
+                <span class="text-muted" style="font-size:.8rem">rows</span>
+                {% endif %}
+              </div>
+
+              {# ── Select ── #}
+              {% elif s.type == 'select' %}
+              <select class="form-select" name="{{ s.key }}" id="s_{{ s.key }}" style="max-width:200px">
+                {% for opt in s.get_options_list() %}
+                <option value="{{ opt }}" {{ 'selected' if s.value == opt }}>{{ opt | capitalize }}</option>
+                {% endfor %}
+              </select>
+
+              {# ── JSON ── #}
+              {% elif s.type == 'json' %}
+              <textarea class="form-control font-monospace" name="{{ s.key }}" id="s_{{ s.key }}"
+                        rows="3" style="font-size:.78rem">{{ s.value }}</textarea>
+
+              {# ── Text (default) ── #}
+              {% else %}
+              <input type="text" class="form-control" name="{{ s.key }}"
+                     id="s_{{ s.key }}" value="{{ s.value }}">
+              {% endif %}
+
+            </div>
+          </div>
+          {% endfor %}
+        </div>{# /settings-card #}
+
+      </div>{# /settings-panel #}
+      {% endfor %}
+    </div>{# /settings-panels #}
+
+  </div>{# /settings-layout #}
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+
+  /* ── Category tab switching ── */
+  var catBtns = document.querySelectorAll('.settings-cat-btn');
+  var panels  = document.querySelectorAll('.settings-panel');
+
+  catBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      catBtns.forEach(function (b) { b.classList.remove('active'); });
+      panels.forEach(function (p)  { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var panel = document.getElementById('cat-' + btn.dataset.cat);
+      if (panel) panel.classList.add('active');
+    });
+  });
+
+  /* ── Live CSS variable map for color settings ── */
+  var liveColorMap = {
+    'primary_color': function (v) {
+      document.documentElement.style.setProperty('--sidebar-bg', v);
+    },
+    'secondary_color': function (v) {
+      document.documentElement.style.setProperty('--primary', v);
+      document.documentElement.style.setProperty(
+        '--primary-hover', 'color-mix(in srgb,' + v + ' 82%,#000)'
+      );
+    }
+  };
+
+  /* ── Wire each color swatch ── */
+  document.querySelectorAll('.color-swatch-wrap').forEach(function (wrap) {
+    var key      = wrap.dataset.colorKey;
+    var picker   = wrap.querySelector('.color-picker-hidden');
+    var hexInput = wrap.querySelector('.color-hex-input');
+    var swatch   = wrap.querySelector('.color-swatch-btn');
+    var liveFn   = liveColorMap[key];
+
+    function applyColor(val) {
+      swatch.style.background = val;
+      picker.value  = val;
+      hexInput.value = val;
+      if (liveFn) liveFn(val);
+    }
+
+    /* Click swatch → open color picker */
+    swatch.addEventListener('click', function () { picker.click(); });
+
+    picker.addEventListener('input', function () { applyColor(picker.value); });
+
+    hexInput.addEventListener('input', function () {
+      var v = hexInput.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) applyColor(v);
+    });
+  });
+
+  /* ── Boolean switch labels ── */
+  document.querySelectorAll('.settings-switch').forEach(function (sw) {
+    sw.addEventListener('change', function () {
+      var wrap = sw.closest('.settings-switch-wrap');
+      if (wrap) wrap.classList.toggle('is-on', sw.checked);
+    });
+  });
+
+})();
+</script>
+{% endblock %}
