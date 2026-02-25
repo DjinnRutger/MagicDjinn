@@ -131,12 +131,15 @@ def spotlight_cards():
         else:
             location  = "Your Box" if is_own else f"{uname}'s Box"
         result.append({
+            "inv_id":      inv.id,
+            "is_own":      is_own,
             "image":       inv.card.image_normal or inv.card.image_small,
             "image_small": inv.card.image_small,
             "name":        inv.card.name,
             "owner":       uname,
             "location":    location,
             "is_foil":     inv.is_foil,
+            "is_proxy":    inv.is_proxy,
             "scryfall_id": inv.card.scryfall_id,
             "set_name":    inv.card.set_name or "",
             "set_code":    (inv.card.set_code or "").upper(),
@@ -146,6 +149,11 @@ def spotlight_cards():
             "rarity":      inv.card.rarity or "",
             "usd":         inv.card.usd,
             "usd_foil":    inv.card.usd_foil,
+            "quantity":    inv.quantity,
+            "condition":   inv.condition.value,
+            "purchase_price": inv.purchase_price_usd,
+            "physical_location": inv.physical_location or "",
+            "notes":       inv.notes or "",
         })
     return jsonify(result)
 

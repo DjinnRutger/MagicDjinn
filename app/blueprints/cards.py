@@ -215,9 +215,10 @@ def _inv_to_dict(inv, location: str) -> dict:
         "usd":         float(card.usd)      if card.usd      is not None else None,
         "usd_foil":    float(card.usd_foil) if card.usd_foil is not None else None,
         "quantity":    inv.quantity,
-        "is_foil":     inv.is_foil,
-        "condition":   inv.condition.value if inv.condition else "NM",
-        "location":    location,
+        "is_foil":            inv.is_foil,
+        "condition":          inv.condition.value if inv.condition else "NM",
+        "location":           location,
+        "physical_location":  inv.physical_location or "",
     }
 
 

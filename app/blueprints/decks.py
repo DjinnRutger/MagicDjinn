@@ -9,14 +9,16 @@ Card movement rules:
   - Qty splits are handled cleanly: partial moves create/merge rows
 
 URLs:
-  GET      /decks                          – deck list
-  GET|POST /decks/new                      – create deck
-  GET      /decks/<id>                     – deck detail + card grid
-  GET|POST /decks/<id>/edit               – edit deck metadata
-  POST     /decks/<id>/delete             – delete deck (returns cards to Box)
-  POST     /decks/<id>/add-card           – AJAX: move card from Box to deck
-  POST     /decks/<id>/remove-card/<inv>  – AJAX: return card to Box
-  POST     /decks/move-card               – AJAX: move card between decks
+  GET      /decks                             – deck list
+  GET|POST /decks/new                         – create deck
+  GET      /decks/<id>                        – deck detail + card grid
+  GET|POST /decks/<id>/edit                  – edit deck metadata + sharing
+  POST     /decks/<id>/delete               – delete deck (returns cards to Box)
+  POST     /decks/<id>/set-cover            – AJAX: set cover card
+  POST     /decks/<id>/add-card             – AJAX: move card from Box to deck
+  POST     /decks/<id>/remove-card/<inv>    – AJAX: return card to Box
+  POST     /decks/move-card                  – AJAX: move card between decks
+  POST     /decks/<id>/import-stream        – streaming import into existing deck
 """
 import logging
 
@@ -44,6 +46,15 @@ def _compute_color_identity(deck) -> str:
         if inv.card and inv.card.color_identity:
             colors.update(inv.card.color_identity)
     return "".join(c for c in _COLOUR_ORDER if c in colors)
+
+
+def _can_access_deck(deck, user):
+    """Return (is_owner, can_edit) for the given user and deck, or abort 403."""
+    is_owner = (deck.user_id == user.id)
+    can_edit = is_owner or deck.is_shared_with(user)
+    if not can_edit:
+        abort(403)
+    return is_owner, can_edit
 
 
 # ── Deck list ─────────────────────────────────────────────────────────────────
@@ -81,12 +92,14 @@ def new_deck():
         import_type = form.import_type.data
 
         # ── Create the deck ───────────────────────────────────────────────────
+        raw_bracket = form.bracket.data
         deck = Deck(
             user_id=current_user.id,
             name=form.name.data.strip(),
             description=form.description.data.strip() or None,
             format=form.format.data,
             is_visible_to_friends=form.is_visible_to_friends.data,
+            bracket=int(raw_bracket) if raw_bracket else None,
         )
         db.session.add(deck)
         db.session.flush()  # get deck.id without committing yet
@@ -166,6 +179,8 @@ def new_deck_stream():
     description = (form.description.data or "").strip() or None
     fmt        = form.format.data
     visible    = form.is_visible_to_friends.data
+    raw_bracket = form.bracket.data
+    bracket_val = int(raw_bracket) if raw_bracket else None
     import_type = form.import_type.data
     text       = (form.decklist_text.data if import_type == "decklist"
                   else form.moxfield_text.data) or ""
@@ -180,6 +195,7 @@ def new_deck_stream():
                 description=description,
                 format=fmt,
                 is_visible_to_friends=visible,
+                bracket=bracket_val,
             )
             db.session.add(deck)
             db.session.flush()
@@ -227,7 +243,8 @@ def detail(deck_id):
     from app.models.inventory import Inventory
     from app.models.card import Card
 
-    deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
+    deck = Deck.query.get_or_404(deck_id)
+    is_owner, can_edit = _can_access_deck(deck, current_user)
 
     search = request.args.get("q", "").strip()
     query = (
@@ -240,9 +257,6 @@ def detail(deck_id):
     deck_cards_raw = query.all()
 
     # ── Sort order ────────────────────────────────────────────────────────────
-    # Commander (is_commander=True) always first, then mainboard by type then
-    # name, then sideboard (is_sideboard=True) at the end — all alphabetical
-    # within each group.
     _TYPE_ORDER = {
         "commander":    0,
         "creature":     1,
@@ -260,11 +274,9 @@ def detail(deck_id):
         for key, rank in _TYPE_ORDER.items():
             if key in tl:
                 return rank
-        return 9  # anything else
+        return 9
 
     def _sort_key(inv):
-        # (sideboard_bit, commander_bit_inverted, type_rank, name)
-        # commander=True → commander_bit_inverted=0 → sorts first among mainboard
         return (
             1 if inv.is_sideboard else 0,
             0 if inv.is_commander else 1,
@@ -274,34 +286,39 @@ def detail(deck_id):
 
     deck_cards = sorted(deck_cards_raw, key=_sort_key)
 
-    # Box cards for the "add cards" modal — passed as lightweight dicts
-    box_items = (
-        Inventory.query
-        .join(Card, Inventory.card_scryfall_id == Card.scryfall_id)
-        .filter(
-            Inventory.user_id == current_user.id,
-            Inventory.current_deck_id.is_(None),
+    # Box cards for the "add cards" modal — only needed when can_edit
+    box_data = []
+    if can_edit:
+        box_items = (
+            Inventory.query
+            .join(Card, Inventory.card_scryfall_id == Card.scryfall_id)
+            .filter(
+                Inventory.user_id == current_user.id,
+                Inventory.current_deck_id.is_(None),
+            )
+            .order_by(Card.name.asc())
+            .all()
         )
-        .order_by(Card.name.asc())
-        .all()
-    )
-    box_data = [
-        {
-            "inv_id":    inv.id,
-            "name":      inv.card.name,
-            "set_code":  inv.card.set_code or "",
-            "image":     inv.card.image_small or "",
-            "quantity":  inv.quantity,
-            "is_foil":   inv.is_foil,
-            "condition": inv.condition.value,
-        }
-        for inv in box_items
-    ]
+        box_data = [
+            {
+                "inv_id":    inv.id,
+                "name":      inv.card.name,
+                "set_code":  inv.card.set_code or "",
+                "image":     inv.card.image_small or "",
+                "quantity":  inv.quantity,
+                "is_foil":   inv.is_foil,
+                "condition": inv.condition.value,
+            }
+            for inv in box_items
+        ]
 
     mainboard  = [i for i in deck_cards if not i.is_sideboard]
     sideboard  = [i for i in deck_cards if i.is_sideboard]
     total_qty  = sum(i.quantity for i in mainboard)
-    total_value = sum((i.card.price_for(i.is_foil) or 0) * i.quantity for i in deck_cards)
+    total_value = sum(
+        (i.card.price_for(i.is_foil) or 0) * i.quantity
+        for i in deck_cards if not i.is_proxy
+    )
 
     return render_template(
         "decks/detail.html",
@@ -313,6 +330,8 @@ def detail(deck_id):
         total_qty=total_qty,
         total_value=total_value,
         search=search,
+        is_owner=is_owner,
+        can_edit=can_edit,
         active_page="decks",
     )
 
@@ -324,16 +343,47 @@ def detail(deck_id):
 @permission_required("deck.edit")
 def edit_deck(deck_id):
     from app.models.deck import Deck
+    from app.models.deck_share import DeckShare
     from app.forms.decks import DeckForm
+    from app.utils.friends import get_friend_group_members
 
+    # Only the owner can change metadata and sharing settings
     deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
     form = DeckForm(obj=deck)
+    if not form.is_submitted():
+        form.bracket.data = str(deck.bracket) if deck.bracket else ""
 
     if form.validate_on_submit():
         deck.name                  = form.name.data.strip()
         deck.description           = form.description.data.strip() or None
         deck.format                = form.format.data
         deck.is_visible_to_friends = form.is_visible_to_friends.data
+        raw_bracket = form.bracket.data
+        deck.bracket = int(raw_bracket) if raw_bracket else None
+
+        # ── Update sharing ────────────────────────────────────────────────────
+        raw_ids = request.form.getlist("share_with")
+        new_share_ids = set()
+        for x in raw_ids:
+            try:
+                uid = int(x)
+                if uid != current_user.id:
+                    new_share_ids.add(uid)
+            except (ValueError, TypeError):
+                pass
+
+        existing_shares = {s.user_id: s for s in deck.shares.all()}
+
+        # Remove shares no longer selected
+        for uid, share in existing_shares.items():
+            if uid not in new_share_ids:
+                db.session.delete(share)
+
+        # Add new shares
+        for uid in new_share_ids:
+            if uid not in existing_shares:
+                db.session.add(DeckShare(deck_id=deck.id, user_id=uid))
+
         db.session.commit()
         log_audit("deck_updated", "deck", deck.id, f"Updated deck '{deck.name}'")
         from app.utils.feed_service import create_deck_post
@@ -342,11 +392,16 @@ def edit_deck(deck_id):
         flash("Deck updated.", "success")
         return redirect(url_for("decks.detail", deck_id=deck.id))
 
+    friends = get_friend_group_members(current_user)
+    current_share_ids = deck.shared_user_ids
+
     return render_template(
         "decks/form.html",
         form=form,
         deck=deck,
         title=f"Edit — {deck.name}",
+        friends=friends,
+        current_share_ids=current_share_ids,
         active_page="decks",
     )
 
@@ -382,7 +437,8 @@ def delete_deck(deck_id):
 @permission_required("deck.edit")
 def set_cover(deck_id):
     from app.models.deck import Deck
-    deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
+    deck = Deck.query.get_or_404(deck_id)
+    _can_access_deck(deck, current_user)  # enforces 403 if no access
     data = request.get_json(silent=True) or {}
     deck.cover_card_scryfall_id = data.get("scryfall_id") or None
     db.session.commit()
@@ -398,7 +454,9 @@ def add_card(deck_id):
     from app.models.deck import Deck
     from app.models.inventory import Inventory, CardCondition
 
-    deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
+    deck = Deck.query.get_or_404(deck_id)
+    _can_access_deck(deck, current_user)
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify(error="No data provided"), 400
@@ -411,7 +469,7 @@ def add_card(deck_id):
     except (TypeError, ValueError):
         return jsonify(error="Invalid quantity"), 400
 
-    # Must be a Box card belonging to this user
+    # Must be a Box card belonging to the current user
     box_inv = Inventory.query.filter_by(
         id=inv_id,
         user_id=current_user.id,
@@ -421,7 +479,7 @@ def add_card(deck_id):
     if qty > box_inv.quantity:
         return jsonify(error=f"Only {box_inv.quantity} in your Box"), 400
 
-    # Look for an existing row for this card in the deck (same foil flag)
+    # Look for an existing row for this card in the deck (same foil flag, same user)
     deck_inv = Inventory.query.filter_by(
         user_id=current_user.id,
         card_scryfall_id=box_inv.card_scryfall_id,
@@ -430,14 +488,12 @@ def add_card(deck_id):
     ).first()
 
     if qty == box_inv.quantity:
-        # Move entire Box row into the deck
         if deck_inv:
             deck_inv.quantity += qty
             db.session.delete(box_inv)
         else:
             box_inv.current_deck_id = deck.id
     else:
-        # Split: reduce Box qty, add to deck row
         box_inv.quantity -= qty
         if deck_inv:
             deck_inv.quantity += qty
@@ -470,7 +526,10 @@ def remove_card(deck_id, inv_id):
     from app.models.deck import Deck
     from app.models.inventory import Inventory
 
-    deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
+    deck = Deck.query.get_or_404(deck_id)
+    _can_access_deck(deck, current_user)
+
+    # The inventory row must belong to the current user (can't remove others' cards)
     deck_inv = Inventory.query.filter_by(
         id=inv_id,
         user_id=current_user.id,
@@ -488,7 +547,6 @@ def remove_card(deck_id, inv_id):
     qty = min(qty, deck_inv.quantity)
     card_name = deck_inv.card.name
 
-    # Look for existing Box row to merge into
     box_inv = Inventory.query.filter_by(
         user_id=current_user.id,
         card_scryfall_id=deck_inv.card_scryfall_id,
@@ -497,14 +555,12 @@ def remove_card(deck_id, inv_id):
     ).first()
 
     if qty >= deck_inv.quantity:
-        # Move entire deck row back to Box
         if box_inv:
             box_inv.quantity += deck_inv.quantity
             db.session.delete(deck_inv)
         else:
             deck_inv.current_deck_id = None
     else:
-        # Partial return
         deck_inv.quantity -= qty
         if box_inv:
             box_inv.quantity += qty
@@ -549,11 +605,11 @@ def move_card():
     ).first_or_404()
 
     if target_deck_id:
-        target = Deck.query.filter_by(
-            id=target_deck_id, user_id=current_user.id
-        ).first_or_404()
+        target = Deck.query.get_or_404(target_deck_id)
+        _can_access_deck(target, current_user)
         target_id = target.id
     else:
+        target = None
         target_id = None  # move to Box
 
     try:
@@ -562,7 +618,6 @@ def move_card():
     except (TypeError, ValueError):
         qty = src_inv.quantity
 
-    # Check for existing row in target location
     existing = Inventory.query.filter_by(
         user_id=current_user.id,
         card_scryfall_id=src_inv.card_scryfall_id,
@@ -591,7 +646,6 @@ def move_card():
             )
             db.session.add(new_inv)
 
-    # Recompute color identity for affected decks
     if src_inv.current_deck_id:
         src_deck = Deck.query.get(src_inv.current_deck_id)
         if src_deck:
@@ -608,3 +662,71 @@ def move_card():
     db.session.commit()
 
     return jsonify(success=True, message=f"Moved to {dest}.")
+
+
+# ── Streaming import into existing deck ───────────────────────────────────────
+
+@decks_bp.route("/decks/<int:deck_id>/import-stream", methods=["POST"])
+@login_required
+@permission_required("deck.edit")
+def import_deck_stream(deck_id):
+    """Stream-import more cards into an existing deck.
+
+    Works for both the deck owner and users the deck is explicitly shared with.
+    Each imported card belongs to the importing user (their user_id).
+    """
+    import json as _j
+    from app.forms.decks import DeckImportForm
+    from app.models.deck import Deck
+    from app.utils.card_service import stream_deck_import
+
+    form = DeckImportForm()
+    if not form.validate_on_submit():
+        def _err():
+            yield _j.dumps({"type": "error",
+                            "message": "Invalid form or CSRF token expired. Please refresh."}) + "\n"
+        return Response(stream_with_context(_err()), content_type="application/x-ndjson")
+
+    deck = Deck.query.get_or_404(deck_id)
+    if not deck.can_edit_by(current_user):
+        def _denied():
+            yield _j.dumps({"type": "error", "message": "Permission denied."}) + "\n"
+        return Response(stream_with_context(_denied()), content_type="application/x-ndjson")
+
+    import_type = form.import_type.data
+    text = (
+        (form.moxfield_text.data if import_type == "moxfield" else form.decklist_text.data) or ""
+    ).strip()
+    is_moxfield = (import_type == "moxfield")
+
+    if not text:
+        def _empty():
+            yield _j.dumps({"type": "error", "message": "No cards to import."}) + "\n"
+        return Response(stream_with_context(_empty()), content_type="application/x-ndjson")
+
+    user_id  = current_user.id
+    deck_id_ = deck.id
+
+    def _gen():
+        try:
+            result = yield from stream_deck_import(text, user_id, deck_id_, moxfield=is_moxfield)
+            deck.color_identity = _compute_color_identity(deck)
+            db.session.commit()
+            log_audit(
+                "cards_imported", "deck", deck.id,
+                f"Imported {result.success_count} card(s) into '{deck.name}'"
+            )
+            db.session.commit()
+            yield _j.dumps({
+                "type": "done",
+                "successes": result.success_count,
+                "failures":  result.failure_count,
+                "redirect_url": url_for("decks.detail", deck_id=deck.id),
+            }) + "\n"
+        except Exception as exc:
+            log.exception("Streaming deck import failed")
+            yield _j.dumps({"type": "error", "message": str(exc)}) + "\n"
+
+    resp = Response(stream_with_context(_gen()), content_type="application/x-ndjson")
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp

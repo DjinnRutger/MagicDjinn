@@ -58,6 +58,7 @@ class Inventory(db.Model):
     is_sideboard       = db.Column(db.Boolean, default=False, nullable=False)
     is_commander       = db.Column(db.Boolean, default=False, nullable=False)
     physical_location  = db.Column(db.String(200), nullable=True)
+    is_proxy           = db.Column(db.Boolean, default=False, nullable=False)
 
     # ── Relationships ────────────────────────────────────────────────────────
     user = db.relationship("User", back_populates="inventory")
@@ -74,7 +75,10 @@ class Inventory(db.Model):
 
     @property
     def current_value(self) -> float | None:
-        """Current market value of this inventory row (quantity × unit price)."""
+        """Current market value of this inventory row (quantity × unit price).
+        Returns None for proxy cards since they have no real monetary value."""
+        if self.is_proxy:
+            return None
         if self.card is None:
             return None
         unit = self.card.price_for(self.is_foil)

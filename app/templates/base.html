@@ -37,10 +37,11 @@
 
   {# ── Dynamic colour tokens (override :root defaults in custom.css) ── #}
   {% set nav_bg  = get_setting('primary_color',   '#0f172a') %}
+  {% set nav_bg2 = get_setting('primary_color_2', '') %}
   {% set accent  = get_setting('secondary_color', '#2563eb') %}
   <style>
     :root {
-      --sidebar-bg:    {{ nav_bg }};
+      --sidebar-bg:    {% if nav_bg2 %}linear-gradient(to bottom, {{ nav_bg }}, {{ nav_bg2 }}){% else %}{{ nav_bg }}{% endif %};
       --primary:       {{ accent }};
       --primary-hover: color-mix(in srgb, {{ accent }} 82%, #000);
     }

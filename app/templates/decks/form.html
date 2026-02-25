@@ -45,11 +45,16 @@
           </div>
 
           <div class="row g-3 mb-3">
-            <div class="col-sm-6">
+            <div class="col-sm-4">
               {{ form.format.label(class="form-label") }}
               {{ form.format(class="form-select") }}
             </div>
-            <div class="col-sm-6 d-flex align-items-end pb-1">
+            <div class="col-sm-4">
+              {{ form.bracket.label(class="form-label") }}
+              {{ form.bracket(class="form-select") }}
+              <div class="form-text">MTG power-level bracket (1 = casual, 5 = CEDH).</div>
+            </div>
+            <div class="col-sm-4 d-flex align-items-end pb-1">
               <div class="form-check">
                 {{ form.is_visible_to_friends(class="form-check-input") }}
                 {{ form.is_visible_to_friends.label(class="form-check-label") }}
@@ -65,7 +70,6 @@
             <i class="bi bi-box-arrow-in-down me-1 text-primary"></i>Import Cards
           </p>
 
-          {# Radio group #}
           <div class="d-flex gap-3 flex-wrap mb-3">
             {% for subfield in form.import_type %}
             <div class="form-check">
@@ -78,7 +82,6 @@
             {% endfor %}
           </div>
 
-          {# Decklist textarea #}
           <div id="import-decklist-section" style="display:none" class="mb-3">
             {{ form.decklist_text.label(class="form-label") }}
             {{ form.decklist_text(class="form-control font-monospace" +
@@ -89,7 +92,6 @@
             {% endfor %}
           </div>
 
-          {# Moxfield export paste #}
           <div id="import-moxfield-section" style="display:none" class="mb-3">
             {{ form.moxfield_text.label(class="form-label") }}
             {{ form.moxfield_text(class="form-control font-monospace" +
@@ -104,6 +106,42 @@
               Sideboard cards are automatically detected.
             </div>
           </div>
+          {% endif %}
+
+          {% if deck and friends is defined %}
+          {# ── Share section (edit mode, owner only) ──────────────────────── #}
+          <hr class="my-3">
+          <p class="fw-semibold mb-1" style="font-size:.88rem">
+            <i class="bi bi-share me-1 text-primary"></i>Share Deck
+          </p>
+          <p class="text-muted mb-2" style="font-size:.8rem">
+            Shared friends can add and remove their own cards in this deck, just like it's their own.
+            Only you can change deck settings or sharing.
+          </p>
+          {% if friends %}
+          <div class="border rounded p-2 mb-3" style="max-height:200px;overflow-y:auto">
+            {% for friend in friends %}
+            {% if friend.id != current_user.id %}
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input"
+                     name="share_with" value="{{ friend.id }}"
+                     id="share_{{ friend.id }}"
+                     {% if friend.id in (current_share_ids or []) %}checked{% endif %}>
+              <label class="form-check-label" for="share_{{ friend.id }}">
+                {{ friend.username }}
+                {% if friend.id in (current_share_ids or []) %}
+                <span class="badge bg-success ms-1" style="font-size:.65rem">Shared</span>
+                {% endif %}
+              </label>
+            </div>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted" style="font-size:.82rem">
+            <i class="bi bi-people me-1"></i>You have no friends in any group yet. Ask an admin to add you to a friend group.
+          </p>
+          {% endif %}
           {% endif %}
 
           <div class="d-flex justify-content-between align-items-center pt-2">
@@ -171,12 +209,11 @@ document.addEventListener('DOMContentLoaded', updateImportUI);
 
     e.preventDefault();
 
-    // Capture FormData BEFORE disabling elements — disabled inputs are excluded from FormData
     var formData = new FormData(form);
 
     var overlay = document.getElementById("deckImportOverlay");
     overlay.classList.remove("d-none");
-    overlay.style.display = "flex"; // ensure flex even after d-none removal
+    overlay.style.display = "flex";
     form.querySelectorAll("button, input, select, textarea").forEach(function (el) {
       el.disabled = true;
     });
@@ -255,7 +292,6 @@ document.addEventListener('DOMContentLoaded', updateImportUI);
     );
     document.getElementById("deckProgressSpinner").style.display = "none";
     document.getElementById("deckProgressTitle").textContent = "Error: " + msg;
-    // Re-enable form so user can try again
     document.getElementById("deckForm").querySelectorAll(
       "button, input, select, textarea"
     ).forEach(function (el) { el.disabled = false; });

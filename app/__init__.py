@@ -158,6 +158,11 @@ def _run_migrations() -> None:
                 "ALTER TABLE inventory ADD COLUMN physical_location VARCHAR(200)"
             ))
             db.session.commit()
+        if "is_proxy" not in inv_cols:
+            db.session.execute(text(
+                "ALTER TABLE inventory ADD COLUMN is_proxy BOOLEAN NOT NULL DEFAULT 0"
+            ))
+            db.session.commit()
     except Exception:
         pass  # table may not exist yet on very first run
 
@@ -169,11 +174,21 @@ def _run_migrations() -> None:
                 "ALTER TABLE decks ADD COLUMN cover_card_scryfall_id VARCHAR(50)"
             ))
             db.session.commit()
+        if "bracket" not in deck_cols:
+            db.session.execute(text(
+                "ALTER TABLE decks ADD COLUMN bracket INTEGER"
+            ))
+            db.session.commit()
     except Exception:
         pass
 
-    # ── feed tables ───────────────────────────────────────────────────────────
+    # ── deck_shares table ─────────────────────────────────────────────────────
     existing_tables = inspector.get_table_names()
+    if "deck_shares" not in existing_tables:
+        from app.models.deck_share import DeckShare
+        DeckShare.__table__.create(db.engine)
+
+    # ── feed tables ───────────────────────────────────────────────────────────
     if "feed_posts" not in existing_tables:
         from app.models.feed import FeedPost
         FeedPost.__table__.create(db.engine)
@@ -230,6 +245,9 @@ def _run_migrations() -> None:
         ("spotlight_cycle_seconds", "9", "number",
          "Community Spotlight auto-cycle interval in seconds (3–60)",
          "general", None),
+        ("primary_color_2", "", "color",
+         "Sidebar gradient end colour — leave blank for a flat sidebar",
+         "appearance", None),
     ]
     for key, value, stype, desc, cat, opts in _new_settings:
         if not Setting.query.filter_by(key=key).first():
@@ -414,6 +432,7 @@ def _seed_database() -> None:
         ("login_layout",      "above",                      "select",  "Login page layout: logo above the form or side-by-side", "appearance", '["above","side"]'),
         ("enable_flying_cards", "true",                     "boolean", "Animate card images flying across the dashboard", "appearance", None),
         ("scryfall_cache_days",  "7",                       "number",  "Days before cached card data is considered stale", "general",    None),
+        ("primary_color_2",      "",                        "color",   "Sidebar gradient end colour — leave blank for a flat sidebar", "appearance", None),
     ]
     for key, value, stype, desc, cat, opts in setting_defs:
         if not Setting.query.filter_by(key=key).first():

@@ -188,6 +188,17 @@ def toggle_like(post_id):
     else:
         db.session.add(FeedLike(post_id=post_id, user_id=current_user.id))
         liked = True
+
+        # Notify the post owner (not when liking your own post)
+        if post.user_id != current_user.id:
+            from app.models.notification import Notification
+            db.session.add(Notification(
+                user_id=post.user_id,
+                actor_id=current_user.id,
+                type="feed_like",
+                message=f"{current_user.username} liked your post",
+            ))
+
     db.session.commit()
 
     count = FeedLike.query.filter_by(post_id=post_id).count()
@@ -213,6 +224,17 @@ def add_comment(post_id):
 
     comment = FeedComment(post_id=post_id, user_id=current_user.id, body=body)
     db.session.add(comment)
+
+    # Notify the post owner (not when commenting on your own post)
+    if post.user_id != current_user.id:
+        from app.models.notification import Notification
+        db.session.add(Notification(
+            user_id=post.user_id,
+            actor_id=current_user.id,
+            type="feed_comment",
+            message=f"{current_user.username} commented on your post",
+        ))
+
     db.session.commit()
 
     return jsonify(success=True, comment={

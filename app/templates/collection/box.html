@@ -143,6 +143,7 @@
     'usd_foil':       inv.card.usd_foil,
     'quantity':       inv.quantity,
     'is_foil':        inv.is_foil,
+    'is_proxy':       inv.is_proxy,
     'condition':      inv.condition.value,
     'purchase_price':     inv.purchase_price_usd,
     'notes':              inv.notes or '',
@@ -169,6 +170,9 @@
         <span class="badge bg-dark bg-opacity-75 text-white" style="font-size:.6rem">{{ inv.quantity }}×</span>
         {% if inv.is_foil %}
         <span class="badge" style="font-size:.55rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦ Foil</span>
+        {% endif %}
+        {% if inv.is_proxy %}
+        <span class="badge bg-secondary" style="font-size:.55rem">PROXY</span>
         {% endif %}
       </div>
     </div>
@@ -268,6 +272,7 @@
     // Edit fields
     document.getElementById("modal-qty").value             = card.quantity || 1;
     document.getElementById("modal-is-foil").checked       = !!card.is_foil;
+    document.getElementById("modal-is-proxy").checked      = !!card.is_proxy;
     document.getElementById("modal-condition").value       = card.condition || "NM";
     document.getElementById("modal-purchase-price").value    = card.purchase_price != null ? card.purchase_price : "";
     document.getElementById("modal-physical-location").value = card.physical_location || "";
@@ -311,6 +316,7 @@
     var payload = {
       quantity:           parseInt(document.getElementById("modal-qty").value) || 1,
       is_foil:            document.getElementById("modal-is-foil").checked,
+      is_proxy:           document.getElementById("modal-is-proxy").checked,
       condition:          document.getElementById("modal-condition").value,
       purchase_price_usd: document.getElementById("modal-purchase-price").value || null,
       physical_location:  document.getElementById("modal-physical-location").value,

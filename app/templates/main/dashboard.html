@@ -336,7 +336,7 @@ dialog#feedCardDlg::backdrop { background: rgba(0,0,0,.55); }
       {# LEFT card #}
       <div class="sl-wrap" id="slWrap">
         <div class="sl-img-col">
-          <img id="sl-img" src="" alt="">
+          <img id="sl-img" src="" alt="" style="cursor:pointer" title="Click to view card details">
           <div id="sl-foil" class="sl-foil-shimmer" style="display:none"></div>
         </div>
         <div class="sl-info-col">
@@ -361,7 +361,7 @@ dialog#feedCardDlg::backdrop { background: rgba(0,0,0,.55); }
       {# RIGHT card — only visible on lg+ screens #}
       <div class="sl-wrap sl-second-only" id="slWrap2">
         <div class="sl-img-col">
-          <img id="sl-img2" src="" alt="">
+          <img id="sl-img2" src="" alt="" style="cursor:pointer" title="Click to view card details">
           <div id="sl-foil2" class="sl-foil-shimmer" style="display:none"></div>
         </div>
         <div class="sl-info-col">
@@ -542,14 +542,65 @@ dialog#feedCardDlg::backdrop { background: rgba(0,0,0,.55); }
         <div id="fcdOracle"
              style="font-size:.8rem;line-height:1.65;white-space:pre-wrap;max-height:150px;overflow-y:auto;
                     background:var(--bs-tertiary-bg);border-radius:6px;padding:.5rem .65rem;margin-bottom:.75rem"></div>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
           <span id="fcdRarity" class="badge" style="font-size:.68rem"></span>
           <div id="fcdPrices" class="d-flex gap-2 flex-wrap"></div>
         </div>
       </div>
     </div>
+
+    {# ── Editable fields (shown for owned cards, greyed-out for others) ── #}
+    <div id="fcdEditSection" style="display:none;margin-top:.75rem;border-top:1px solid var(--bs-border-color);padding-top:.75rem">
+      <div id="fcdReadonlyNotice" style="display:none" class="alert alert-secondary py-1 mb-2" style="font-size:.8rem">
+        <i class="bi bi-lock me-1"></i>Read-only — you don't own this card.
+      </div>
+      <p class="mb-2 fw-semibold" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color)">Your Copy</p>
+      <div class="row g-2 mb-2">
+        <div class="col-4">
+          <label class="form-label" style="font-size:.75rem">Quantity</label>
+          <input type="number" id="fcdQty" class="form-control form-control-sm" min="1" max="99" value="1">
+        </div>
+        <div class="col-4">
+          <label class="form-label" style="font-size:.75rem">Condition</label>
+          <select id="fcdCondition" class="form-select form-select-sm">
+            <option value="NM">NM — Near Mint</option>
+            <option value="EX">EX — Excellent</option>
+            <option value="GD">GD — Good</option>
+            <option value="LP">LP — Lightly Played</option>
+            <option value="PL">PL — Played</option>
+            <option value="PO">PO — Poor</option>
+          </select>
+        </div>
+        <div class="col-4">
+          <label class="form-label" style="font-size:.75rem">Paid (USD)</label>
+          <input type="number" id="fcdPurchasePrice" class="form-control form-control-sm" placeholder="0.00" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="mb-2 d-flex gap-3 flex-wrap">
+        <div class="form-check">
+          <input type="checkbox" id="fcdIsFoil" class="form-check-input">
+          <label for="fcdIsFoil" class="form-check-label" style="font-size:.85rem">Foil</label>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="fcdIsProxy" class="form-check-input">
+          <label for="fcdIsProxy" class="form-check-label" style="font-size:.85rem">
+            <span class="badge bg-secondary" style="font-size:.6rem">PROXY</span>
+            Proxy <small class="text-muted">(excluded from value)</small>
+          </label>
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label" style="font-size:.75rem">Notes</label>
+        <textarea id="fcdNotes" class="form-control form-control-sm" rows="2" maxlength="500"></textarea>
+      </div>
+      <div id="fcdAlert" style="display:none" class="mb-2"></div>
+    </div>
   </div>
-  <div style="padding:.75rem 1.25rem;border-top:1px solid var(--bs-border-color);display:flex;justify-content:flex-end">
+  <div style="padding:.75rem 1.25rem;border-top:1px solid var(--bs-border-color);display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+    <button type="button" id="fcdSaveBtn" class="btn btn-primary btn-sm" style="display:none">
+      <i class="bi bi-check-lg me-1"></i>Save
+    </button>
+    <div style="flex:1"></div>
     <button type="button" class="btn btn-outline-secondary btn-sm" id="fcdCancel">Close</button>
   </div>
 </dialog>
@@ -634,10 +685,14 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
   /* Returns true when the viewport is wide enough to show both card slots */
   function _isWide() { return window.innerWidth >= 992; }
 
+  /* Per-slot card data store so click handler can open the right card */
+  var _slotCards = { '': null, '2': null };
+
   /* Populate a single card slot. sfx is '' for left, '2' for right. */
   function _populateSlot(card, sfx) {
     var img = document.getElementById('sl-img' + sfx);
     if (!img) return;
+    _slotCards[sfx] = card;
     img.src = card.image || card.image_small || '';
     img.alt = card.name  || '';
     document.getElementById('sl-foil' + sfx).style.display = card.is_foil ? '' : 'none';
@@ -777,6 +832,17 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
     grid.style.display = '';
     showBoth(0, 1, true);
 
+    /* Wire up click handlers on spotlight images */
+    ['', '2'].forEach(function (sfx) {
+      var imgEl = document.getElementById('sl-img' + sfx);
+      if (imgEl) {
+        imgEl.addEventListener('click', function () {
+          var card = _slotCards[sfx];
+          if (card && window._openFeedCardDlg) window._openFeedCardDlg(card);
+        });
+      }
+    });
+
     if (allCards.length > 1) {
       nav.style.cssText = '';   // removes display:none!important
       document.getElementById('slPrev').addEventListener('click', function () { advance(-1); });
@@ -802,21 +868,72 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
   document.getElementById('fcdClose').addEventListener('click',  function () { dlg.close(); });
   document.getElementById('fcdCancel').addEventListener('click', function () { dlg.close(); });
   dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+
+  /* ── Save handler for spotlight cards ── */
+  document.getElementById('fcdSaveBtn').addEventListener('click', function () {
+    if (!_fcdCurrentInvId || !_fcdCurrentIsOwn) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+    document.getElementById('fcdAlert').style.display = 'none';
+
+    var payload = {
+      quantity:           parseInt(document.getElementById('fcdQty').value) || 1,
+      is_foil:            document.getElementById('fcdIsFoil').checked,
+      is_proxy:           document.getElementById('fcdIsProxy').checked,
+      condition:          document.getElementById('fcdCondition').value,
+      purchase_price_usd: document.getElementById('fcdPurchasePrice').value || null,
+      notes:              document.getElementById('fcdNotes').value,
+    };
+
+    fetch('/box/' + _fcdCurrentInvId + '/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _fcdCSRF },
+      body: JSON.stringify(payload),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var al = document.getElementById('fcdAlert');
+      if (data.success) {
+        al.innerHTML = '<div class="alert alert-success py-1 mb-0" style="font-size:.8rem">' + (data.message || 'Saved!') + '</div>';
+        al.style.display = '';
+        setTimeout(function () { dlg.close(); }, 1200);
+      } else {
+        al.innerHTML = '<div class="alert alert-danger py-1 mb-0" style="font-size:.8rem">' + (data.error || 'Could not save.') + '</div>';
+        al.style.display = '';
+      }
+    })
+    .catch(function () {
+      var al = document.getElementById('fcdAlert');
+      al.innerHTML = '<div class="alert alert-danger py-1 mb-0" style="font-size:.8rem">Network error.</div>';
+      al.style.display = '';
+    })
+    .finally(function () {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Save';
+    });
+  });
 })();
 
 window._feedCardCache = {};
+var _fcdCurrentInvId  = null;
+var _fcdCurrentIsOwn  = false;
+var _fcdCSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
 window._openFeedCardDlg = function (c) {
   var dlg = document.getElementById('feedCardDlg');
   if (!dlg) return;
   var rarityColors = { mythic:'#e05c07', rare:'#a88b2e', uncommon:'#7c9db4', common:'#555' };
 
+  _fcdCurrentInvId = c.inv_id || null;
+  _fcdCurrentIsOwn = !!c.is_own;
+
   // Header name
   document.getElementById('fcdName').textContent = c.name || '—';
 
   // Image
   var img = document.getElementById('fcdImage');
-  img.src = c.image_normal || c.image_small || '';
+  img.src = c.image_normal || c.image_small || c.image || '';
   img.alt = c.name || '';
 
   // Foil badge
@@ -867,6 +984,34 @@ window._openFeedCardDlg = function (c) {
     pricesEl.innerHTML += '<span class="badge bg-success" style="font-size:.72rem">$' + parseFloat(c.usd).toFixed(2) + '</span>';
   if (c.usd_foil != null)
     pricesEl.innerHTML += '<span class="badge" style="font-size:.72rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦ $' + parseFloat(c.usd_foil).toFixed(2) + '</span>';
+
+  // ── Edit section (only for spotlight cards that have inv_id) ──
+  var editSec = document.getElementById('fcdEditSection');
+  var saveBtn = document.getElementById('fcdSaveBtn');
+  if (_fcdCurrentInvId) {
+    editSec.style.display = '';
+    document.getElementById('fcdQty').value           = c.quantity || 1;
+    document.getElementById('fcdCondition').value     = c.condition || 'NM';
+    document.getElementById('fcdPurchasePrice').value = c.purchase_price != null ? c.purchase_price : '';
+    document.getElementById('fcdIsFoil').checked      = !!c.is_foil;
+    document.getElementById('fcdIsProxy').checked     = !!c.is_proxy;
+    document.getElementById('fcdNotes').value         = c.notes || '';
+    document.getElementById('fcdAlert').style.display = 'none';
+
+    var fields = editSec.querySelectorAll('input, select, textarea');
+    if (_fcdCurrentIsOwn) {
+      fields.forEach(function(el) { el.disabled = false; });
+      document.getElementById('fcdReadonlyNotice').style.display = 'none';
+      saveBtn.style.display = '';
+    } else {
+      fields.forEach(function(el) { el.disabled = true; });
+      document.getElementById('fcdReadonlyNotice').style.display = '';
+      saveBtn.style.display = 'none';
+    }
+  } else {
+    editSec.style.display = 'none';
+    saveBtn.style.display = 'none';
+  }
 
   dlg.showModal();
 };

@@ -11,6 +11,7 @@ from app.models.card import Card
 from app.models.deck import Deck, MTG_FORMATS
 from app.models.inventory import Inventory, CardCondition
 from app.models.friend_group import FriendGroup, user_friend_groups
+from app.models.deck_share import DeckShare
 from app.models.notification import Notification
 from app.models.feed import FeedPost, FeedLike, FeedComment
 
@@ -21,6 +22,7 @@ __all__ = [
     "Deck", "MTG_FORMATS",
     "Inventory", "CardCondition",
     "FriendGroup", "user_friend_groups",
+    "DeckShare",
     "Notification",
     "FeedPost", "FeedLike", "FeedComment",
 ]

@@ -35,6 +35,7 @@ class Deck(db.Model):
     format                = db.Column(db.String(30), default="Casual")
     color_identity        = db.Column(db.String(10))  # e.g. "WUBRG", computed on save
     is_visible_to_friends = db.Column(db.Boolean, default=True, nullable=False)
+    bracket               = db.Column(db.Integer, nullable=True)  # MTG power-level bracket 1–5
     cover_card_scryfall_id = db.Column(db.String(50), nullable=True)  # optional cover image
     created_at            = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
@@ -50,6 +51,10 @@ class Deck(db.Model):
     cards = db.relationship(
         "Inventory", back_populates="deck", lazy="dynamic",
         foreign_keys="Inventory.current_deck_id",
+    )
+    shares = db.relationship(
+        "DeckShare", back_populates="deck",
+        lazy="dynamic", cascade="all, delete-orphan",
     )
 
     # ── Computed properties ──────────────────────────────────────────────────
@@ -72,9 +77,12 @@ class Deck(db.Model):
 
     @property
     def total_value(self) -> float:
-        """Approximate deck value in USD based on current Scryfall prices."""
+        """Approximate deck value in USD based on current Scryfall prices.
+        Proxy cards are excluded from the total."""
         total = 0.0
         for inv in self.cards:
+            if inv.is_proxy:
+                continue
             price = inv.card.price_for(inv.is_foil) if inv.card else None
             if price is not None:
                 total += price * inv.quantity
@@ -94,6 +102,21 @@ class Deck(db.Model):
         if card is None:
             return None
         return card.image_normal or card.image_small
+
+    # ── Sharing helpers ──────────────────────────────────────────────────────
+    def is_shared_with(self, user) -> bool:
+        """True if this deck has been explicitly shared with the given user."""
+        from app.models.deck_share import DeckShare
+        return DeckShare.query.filter_by(deck_id=self.id, user_id=user.id).count() > 0
+
+    def can_edit_by(self, user) -> bool:
+        """True if user may add/remove cards in this deck (owner or shared)."""
+        return self.user_id == user.id or self.is_shared_with(user)
+
+    @property
+    def shared_user_ids(self) -> list:
+        """List of user IDs this deck is explicitly shared with."""
+        return [s.user_id for s in self.shares.all()]
 
     def __repr__(self) -> str:
         return f"<Deck {self.name!r} (user={self.user_id})>"

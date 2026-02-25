@@ -145,6 +145,11 @@
              placeholder="Filter by card name…"
              class="form-control" autocomplete="off">
     </div>
+    <select id="mcLocationFilter" class="form-select form-select-sm"
+            style="width:auto;min-width:160px;max-width:220px"
+            title="Filter by physical location">
+      <option value="">All Locations</option>
+    </select>
     <div class="form-check mb-0">
       <input type="checkbox" id="mcAvailable" class="form-check-input">
       <label for="mcAvailable" class="form-check-label" style="font-size:.82rem;white-space:nowrap">Available only</label>
@@ -345,6 +350,72 @@
   </div>
 </dialog>
 
+{# ── Scryfall card detail dialog ──────────────────────────────────────────── #}
+<dialog id="sfDetailDlg" style="max-width:min(720px,95vw);width:100%;border:none;border-radius:14px;padding:0;background:var(--bs-body-bg);color:var(--bs-body-color);box-shadow:0 24px 80px rgba(0,0,0,.55)">
+  <div style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
+
+    {# ── Image column ── #}
+    <div style="flex-shrink:0;width:200px">
+      <div style="position:relative">
+        <img id="sfd-image" src="" alt="" style="width:100%;border-radius:10px;display:block;box-shadow:0 4px 16px rgba(0,0,0,.4)">
+        <div id="sfd-no-image" style="display:none;width:200px;aspect-ratio:63/88;background:var(--bs-tertiary-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--bs-secondary-color)">
+          <i class="bi bi-card-image"></i>
+        </div>
+      </div>
+      {# Prices below image #}
+      <div style="margin-top:.85rem;display:flex;flex-direction:column;gap:.35rem">
+        <div style="font-size:.8rem;display:flex;justify-content:space-between;padding:.3rem .5rem;background:var(--bs-tertiary-bg);border-radius:6px">
+          <span class="text-muted">Market</span><strong id="sfd-usd">—</strong>
+        </div>
+        <div style="font-size:.8rem;display:flex;justify-content:space-between;padding:.3rem .5rem;background:var(--bs-tertiary-bg);border-radius:6px">
+          <span class="text-muted">Foil</span><strong id="sfd-usd-foil">—</strong>
+        </div>
+      </div>
+    </div>
+
+    {# ── Info column ── #}
+    <div style="flex:1;min-width:0">
+      <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+        <h4 id="sfd-name" class="mb-0 fw-bold" style="font-size:1.15rem;line-height:1.3"></h4>
+        <button id="sfd-close" style="border:none;background:none;font-size:1.5rem;line-height:1;padding:.15rem .4rem;cursor:pointer;color:var(--bs-secondary-color);flex-shrink:0;border-radius:6px" title="Close">×</button>
+      </div>
+
+      <div class="d-flex gap-1 flex-wrap mb-3" id="sfd-badges"></div>
+
+      <dl style="display:grid;grid-template-columns:auto 1fr;gap:.25rem .75rem;font-size:.85rem;margin-bottom:.75rem">
+        <dt class="text-muted fw-normal" style="white-space:nowrap">Set</dt>
+        <dd id="sfd-set" class="mb-0" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></dd>
+        <dt class="text-muted fw-normal" style="white-space:nowrap">Type</dt>
+        <dd id="sfd-type" class="mb-0"></dd>
+        <dt id="sfd-mana-label" class="text-muted fw-normal" style="white-space:nowrap">Mana</dt>
+        <dd id="sfd-mana" class="mb-0"></dd>
+      </dl>
+
+      <div style="border-top:1px solid var(--bs-border-color);padding-top:.75rem;margin-bottom:.85rem">
+        <div class="text-muted" style="font-size:.72rem;font-weight:600;letter-spacing:.04em;margin-bottom:.4rem">ORACLE TEXT</div>
+        <div id="sfd-oracle" style="font-size:.85rem;max-height:120px;overflow-y:auto;white-space:pre-wrap;line-height:1.55"></div>
+      </div>
+
+      {# ── Add to Box section ── #}
+      <div style="border-top:1px solid var(--bs-border-color);padding-top:.85rem">
+        <div class="text-muted mb-2" style="font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Add to Box</div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="number" id="sfd-qty" class="form-control form-control-sm" style="width:72px" value="1" min="1" max="99">
+          <div class="form-check mb-0">
+            <input type="checkbox" id="sfd-foil" class="form-check-input">
+            <label for="sfd-foil" class="form-check-label" style="font-size:.82rem">Foil</label>
+          </div>
+          <button id="sfd-add-btn" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Add to Box
+          </button>
+        </div>
+        <div id="sfd-msg" style="font-size:.78rem;margin-top:.35rem;min-height:1.1em"></div>
+      </div>
+    </div>
+
+  </div>
+</dialog>
+
 {% endblock %}
 
 {% block scripts %}
@@ -420,7 +491,9 @@ async function runScryfallSearch() {
 
     data.cards.forEach(card => {
       const tile = document.createElement('div');
-      tile.className = 'cs-tile';
+      tile.className = 'cs-tile sf-tile';
+      tile.style.cursor = 'pointer';
+      tile.title = 'Click for full card details';
 
       let legs = {};
       try { legs = JSON.parse(card.legalities || '{}'); } catch {}
@@ -437,18 +510,17 @@ async function runScryfallSearch() {
             <div class="cs-ov-name">${card.name}</div>
             <div class="cs-ov-owner">${card.set_code || ''} ${card.set_name ? '· ' + card.set_name : ''}</div>
             ${pills ? `<div style="margin-top:.25rem">${pills}</div>` : ''}
-            <button class="btn-add-box"
-                    data-scryfall-id="${card.scryfall_id}"
-                    data-name="${card.name.replace(/"/g,'&quot;')}"
-                    onclick="addToBox(this)">
-              + Add to Box
-            </button>
+            <div style="color:rgba(255,255,255,.65);font-size:.58rem;margin-top:.2rem">Click for details</div>
           </div>
         </div>
         <div class="cs-info">
           <div class="cs-name" title="${card.name}">${card.name}</div>
           <div class="cs-meta">${card.set_code || ''} · ${priceStr}</div>
         </div>`;
+
+      // Store full card data on the tile element for the click handler
+      tile._sfCard = card;
+      tile.addEventListener('click', () => _openSFDetail(tile._sfCard));
       sfGrid.appendChild(tile);
     });
 
@@ -467,7 +539,7 @@ document.getElementById('scryfallQuery')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') runScryfallSearch();
 });
 
-/* ── Add to Box ───────────────────────────────────────────────────────────── */
+/* ── Toast helper (still used by other parts of the page) ────────────────── */
 function showToast(msg, type = 'success') {
   const el = document.createElement('div');
   el.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
@@ -477,34 +549,112 @@ function showToast(msg, type = 'success') {
   setTimeout(() => el.remove(), 3500);
 }
 
-async function addToBox(btn) {
+/* ── Scryfall card detail dialog ─────────────────────────────────────────── */
+const _sfdDlg   = document.getElementById('sfDetailDlg');
+let   _sfdCard  = null;
+
+function _openSFDetail(card) {
+  if (!card) return;
+  _sfdCard = card;
+
+  const img   = document.getElementById('sfd-image');
+  const noImg = document.getElementById('sfd-no-image');
+  const imgSrc = card.image_normal || card.image_small;
+  if (imgSrc) {
+    img.src = imgSrc;  img.alt = card.name;
+    img.style.display   = '';
+    noImg.style.display = 'none';
+  } else {
+    img.style.display   = 'none';
+    noImg.style.display = 'flex';
+  }
+
+  document.getElementById('sfd-name').textContent = card.name;
+  document.getElementById('sfd-usd').textContent      = card.usd      != null ? `$${parseFloat(card.usd).toFixed(2)}`      : '—';
+  document.getElementById('sfd-usd-foil').textContent = card.usd_foil != null ? `$${parseFloat(card.usd_foil).toFixed(2)}` : '—';
+  document.getElementById('sfd-set').textContent  = [card.set_code, card.set_name].filter(Boolean).join(' — ');
+  document.getElementById('sfd-type').textContent = card.type_line || '';
+  document.getElementById('sfd-oracle').innerHTML  = renderMana(card.oracle_text || '');
+
+  const manaEl    = document.getElementById('sfd-mana');
+  const manaLabel = document.getElementById('sfd-mana-label');
+  if (card.mana_cost) {
+    manaEl.innerHTML        = renderMana(card.mana_cost);
+    manaEl.style.display    = '';
+    manaLabel.style.display = '';
+  } else {
+    manaEl.style.display    = 'none';
+    manaLabel.style.display = 'none';
+  }
+
+  // Rarity + legality badges
+  const badges = document.getElementById('sfd-badges');
+  const rarityColors = { mythic:'#e05c07', rare:'#a88b2e', uncommon:'#7c9db4', common:'#555' };
+  const rarityHtml = card.rarity
+    ? `<span class="badge" style="font-size:.72rem;padding:.3rem .6rem;background:${rarityColors[card.rarity]||'#555'};color:#fff">${card.rarity.charAt(0).toUpperCase()+card.rarity.slice(1)}</span>`
+    : '';
+  let legs = {};
+  try { legs = JSON.parse(card.legalities || '{}'); } catch {}
+  badges.innerHTML = rarityHtml + (legalityPills(legs) ? `<span style="margin-left:.25rem">${legalityPills(legs)}</span>` : '');
+
+  // Reset Add-to-Box form
+  document.getElementById('sfd-qty').value = 1;
+  document.getElementById('sfd-foil').checked = false;
+  document.getElementById('sfd-msg').textContent = '';
+  document.getElementById('sfd-add-btn').disabled = false;
+  document.getElementById('sfd-add-btn').innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add to Box';
+
+  _sfdDlg.showModal();
+}
+
+document.getElementById('sfd-close').addEventListener('click', () => _sfdDlg.close());
+_sfdDlg.addEventListener('click', e => { if (e.target === _sfdDlg) _sfdDlg.close(); });
+
+document.getElementById('sfd-add-btn').addEventListener('click', async function () {
+  if (!_sfdCard) return;
+  const qty    = Math.max(1, Math.min(parseInt(document.getElementById('sfd-qty').value) || 1, 99));
+  const isFoil = document.getElementById('sfd-foil').checked;
+  const btn    = this;
+  const msg    = document.getElementById('sfd-msg');
+
   btn.disabled = true;
-  btn.textContent = '…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  msg.textContent = '';
+
   try {
     const res  = await fetch('/cards/add-to-box', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-      body: JSON.stringify({
-        scryfall_id: btn.dataset.scryfallId,
-        name:        btn.dataset.name,
-        qty: 1,
+      body:    JSON.stringify({
+        scryfall_id: _sfdCard.scryfall_id,
+        name:        _sfdCard.name,
+        qty,
+        is_foil:     isFoil,
       }),
     });
     const data = await res.json();
     if (data.success) {
-      showToast(data.message, 'success');
-      btn.textContent = '✓ Added';
+      msg.style.color = 'var(--bs-success)';
+      msg.textContent = data.message;
+      btn.innerHTML   = '✓ Added';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add to Box';
+        msg.textContent = '';
+      }, 2200);
     } else {
-      showToast(data.error || 'Failed to add card.', 'danger');
+      msg.style.color = 'var(--bs-danger)';
+      msg.textContent = data.error || 'Failed to add card.';
       btn.disabled = false;
-      btn.textContent = '+ Add to Box';
+      btn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add to Box';
     }
   } catch {
-    showToast('Network error.', 'danger');
+    msg.style.color = 'var(--bs-danger)';
+    msg.textContent = 'Network error — try again.';
     btn.disabled = false;
-    btn.textContent = '+ Add to Box';
+    btn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add to Box';
   }
-}
+});
 
 // Auto-trigger Scryfall search if arriving on that tab with a query
 {% if source == 'scryfall' and q %}
@@ -532,6 +682,7 @@ async function _loadMyCollection() {
     _mcData = await res.json();
     _mcData.forEach(c => { _mcById[String(c.inv_id)] = c; });
     meta.textContent = `${_mcData.length} card${_mcData.length !== 1 ? 's' : ''}`;
+    _buildLocationFilter();
     _renderMC(_mcData);
   } catch {
     loading.innerHTML = '<span class="text-danger">Failed to load — reload to retry.</span>';
@@ -581,14 +732,31 @@ function _renderMC(cards) {
   }).join('');
 }
 
-/* Live filter + Available checkbox */
+/* Build physical location dropdown after data loads */
+function _buildLocationFilter() {
+  const sel = document.getElementById('mcLocationFilter');
+  const locs = [...new Set(_mcData.map(c => c.physical_location).filter(Boolean))].sort();
+  // Keep the "All Locations" option, remove old extras
+  while (sel.options.length > 1) sel.remove(1);
+  locs.forEach(loc => {
+    const opt = document.createElement('option');
+    opt.value = loc;
+    opt.textContent = loc;
+    sel.appendChild(opt);
+  });
+  sel.style.display = locs.length ? '' : 'none';
+}
+
+/* Live filter + Available checkbox + Location dropdown */
 function _refilterMC() {
   if (_mcData === null || !_mcData.length) return;
   const q         = document.getElementById('mcSearch').value.toLowerCase().trim();
   const availOnly = document.getElementById('mcAvailable').checked;
+  const locFilter = document.getElementById('mcLocationFilter').value;
   let filtered    = _mcData;
   if (q)         filtered = filtered.filter(c => c.name.toLowerCase().includes(q));
   if (availOnly) filtered = filtered.filter(c => c.location.endsWith('Box'));
+  if (locFilter) filtered = filtered.filter(c => c.physical_location === locFilter);
   const cnt = filtered.length;
   document.getElementById('mcMeta').textContent =
     `${cnt} card${cnt !== 1 ? 's' : ''}` + (_mcData.length !== cnt ? ` of ${_mcData.length}` : '');
@@ -596,6 +764,7 @@ function _refilterMC() {
 }
 document.getElementById('mcSearch').addEventListener('input', _refilterMC);
 document.getElementById('mcAvailable').addEventListener('change', _refilterMC);
+document.getElementById('mcLocationFilter').addEventListener('change', _refilterMC);
 
 /* Click / keyboard → shared detail dialog */
 document.getElementById('mcGrid').addEventListener('click', function (e) {

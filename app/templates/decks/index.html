@@ -95,9 +95,12 @@
     <div class="deck-card-header">
       <div class="d-flex align-items-start justify-content-between gap-2 mb-1">
         <div class="deck-card-name">{{ deck.name }}</div>
-        <span class="badge fmt-{{ deck.format | replace(' ','') }} flex-shrink-0" style="font-size:.65rem">
-          {{ deck.format }}
-        </span>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <span class="badge fmt-{{ deck.format | replace(' ','') }}" style="font-size:.65rem">{{ deck.format }}</span>
+          {% if deck.bracket %}
+          <span class="badge" style="background:#374151;color:#fff;font-size:.65rem" title="Bracket {{ deck.bracket }}">B{{ deck.bracket }}</span>
+          {% endif %}
+        </div>
       </div>
       {# Color identity pips #}
       <div class="d-flex gap-1 align-items-center">

@@ -9,10 +9,12 @@ Permission model:
   - friends.view  → transfer cards (additional runtime checks via can_transfer_card)
 
 URLs:
-  GET  /friends                        – list my friend-group members
-  GET  /friends/<user_id>/box          – view a member's Box (+ transfer UI)
-  GET  /friends/<user_id>/decks        – view a member's public decks
-  POST /friends/transfer               – AJAX: take a card from member's Box → my deck
+  GET  /friends                              – list my friend-group members
+  GET  /friends/<user_id>/box               – view a member's Box (+ transfer UI)
+  GET  /friends/<user_id>/decks             – view a member's public decks (grid)
+  GET  /friends/decks/<deck_id>             – full-page view of a friend's deck
+  POST /friends/transfer                     – AJAX: take a card from member's Box → my deck
+  GET  /friends/decks/<deck_id>/cards       – JSON: friend deck cards (legacy AJAX)
 """
 from flask import (
     Blueprint, render_template, request, redirect,
@@ -106,7 +108,7 @@ def friend_box(user_id):
     )
 
 
-# ── Friend's public decks ─────────────────────────────────────────────────────
+# ── Friend's public decks grid ────────────────────────────────────────────────
 
 @friends_bp.route("/friends/<int:user_id>/decks")
 @login_required
@@ -130,6 +132,120 @@ def friend_decks(user_id):
         "friends/decks.html",
         friend=friend,
         decks=decks,
+        active_page="friends",
+    )
+
+
+# ── Full-page view of a friend's deck ─────────────────────────────────────────
+
+@friends_bp.route("/friends/decks/<int:deck_id>")
+@login_required
+@permission_required("friends.view")
+def friend_deck_detail(deck_id):
+    from app.models.deck import Deck
+    from app.models.user import User
+    from app.models.inventory import Inventory
+    from app.models.card import Card
+
+    deck = Deck.query.get_or_404(deck_id)
+    owner = User.query.get_or_404(deck.user_id)
+
+    # Access: deck must be shared with viewer OR visible + in same friend group
+    is_shared        = deck.is_shared_with(current_user)
+    can_view_as_friend = deck.is_visible_to_friends and can_view_box(current_user, owner)
+
+    if not is_shared and not can_view_as_friend:
+        abort(403)
+
+    can_edit = is_shared  # view-only unless explicitly shared
+
+    search = request.args.get("q", "").strip()
+    query = (
+        Inventory.query
+        .join(Card, Inventory.card_scryfall_id == Card.scryfall_id)
+        .filter(Inventory.current_deck_id == deck.id)
+    )
+    if search:
+        query = query.filter(Card.name.ilike(f"%{search}%"))
+    deck_cards_raw = query.all()
+
+    _TYPE_ORDER = {
+        "commander":    0,
+        "creature":     1,
+        "instant":      2,
+        "sorcery":      3,
+        "artifact":     4,
+        "enchantment":  5,
+        "planeswalker": 6,
+        "battle":       7,
+        "land":         8,
+    }
+
+    def _type_rank(inv) -> int:
+        tl = (inv.card.type_line or "").lower()
+        for key, rank in _TYPE_ORDER.items():
+            if key in tl:
+                return rank
+        return 9
+
+    def _sort_key(inv):
+        return (
+            1 if inv.is_sideboard else 0,
+            0 if inv.is_commander else 1,
+            _type_rank(inv),
+            (inv.card.name or "").lower(),
+        )
+
+    deck_cards = sorted(deck_cards_raw, key=_sort_key)
+
+    # Box data: only needed when the viewer has edit access (can add their cards)
+    box_data = []
+    if can_edit:
+        box_items = (
+            Inventory.query
+            .join(Card, Inventory.card_scryfall_id == Card.scryfall_id)
+            .filter(
+                Inventory.user_id == current_user.id,
+                Inventory.current_deck_id.is_(None),
+            )
+            .order_by(Card.name.asc())
+            .all()
+        )
+        box_data = [
+            {
+                "inv_id":    inv.id,
+                "name":      inv.card.name,
+                "set_code":  inv.card.set_code or "",
+                "image":     inv.card.image_small or "",
+                "quantity":  inv.quantity,
+                "is_foil":   inv.is_foil,
+                "condition": inv.condition.value,
+            }
+            for inv in box_items
+        ]
+
+    mainboard   = [i for i in deck_cards if not i.is_sideboard]
+    sideboard   = [i for i in deck_cards if i.is_sideboard]
+    total_qty   = sum(i.quantity for i in mainboard)
+    total_value = sum(
+        (i.card.price_for(i.is_foil) or 0) * i.quantity
+        for i in deck_cards if not i.is_proxy
+    )
+
+    return render_template(
+        "friends/deck_detail.html",
+        deck=deck,
+        friend=owner,
+        deck_cards=deck_cards,
+        mainboard=mainboard,
+        sideboard=sideboard,
+        box_data=box_data,
+        total_qty=total_qty,
+        total_value=total_value,
+        search=search,
+        is_owner=False,
+        can_edit=can_edit,
+        current_user_id=current_user.id,
         active_page="friends",
     )
 
@@ -203,7 +319,6 @@ def transfer():
             current_deck_id=dest_deck_id,
         ))
 
-    # Recompute color identity when adding to a deck
     if target_deck:
         target_deck.color_identity = _compute_color_identity(target_deck)
 
@@ -228,7 +343,7 @@ def transfer():
     )
 
 
-# ── AJAX: friend deck cards (read-only) ───────────────────────────────────────
+# ── AJAX: friend deck cards JSON (legacy / API) ───────────────────────────────
 
 @friends_bp.route("/friends/decks/<int:deck_id>/cards")
 @login_required
@@ -244,7 +359,7 @@ def friend_deck_cards(deck_id):
         abort(403)
 
     owner = User.query.get_or_404(deck.user_id)
-    if not can_view_box(current_user, owner):
+    if not can_view_box(current_user, owner) and not deck.is_shared_with(current_user):
         abort(403)
 
     invs = (
@@ -259,18 +374,20 @@ def friend_deck_cards(deck_id):
     for inv in invs:
         c = inv.card
         cards.append({
-            "name":        c.name,
-            "image_small": c.image_small,
+            "inv_id":       inv.id,
+            "owner_id":     inv.user_id,
+            "name":         c.name,
+            "image_small":  c.image_small,
             "image_normal": c.image_normal,
-            "set_code":    (c.set_code or "").upper(),
-            "type_line":   c.type_line or "",
-            "mana_cost":   c.mana_cost or "",
-            "oracle_text": c.oracle_text or "",
-            "rarity":      c.rarity or "",
-            "usd":         c.usd,
-            "usd_foil":    c.usd_foil,
-            "quantity":    inv.quantity,
-            "is_foil":     inv.is_foil,
+            "set_code":     (c.set_code or "").upper(),
+            "type_line":    c.type_line or "",
+            "mana_cost":    c.mana_cost or "",
+            "oracle_text":  c.oracle_text or "",
+            "rarity":       c.rarity or "",
+            "usd":          c.usd,
+            "usd_foil":     c.usd_foil,
+            "quantity":     inv.quantity,
+            "is_foil":      inv.is_foil,
             "is_sideboard": inv.is_sideboard,
         })
 

@@ -179,10 +179,21 @@
   });
 
   /* ── Live CSS variable map for color settings ── */
+  function _rebuildSidebarBg() {
+    var c1El = document.getElementById('s_primary_color_text');
+    var c2El = document.getElementById('s_primary_color_2_text');
+    var c1   = c1El ? c1El.value.trim() : '#0f172a';
+    var c2   = c2El ? c2El.value.trim() : '';
+    if (!c1 || !/^#[0-9a-fA-F]{6}$/.test(c1)) c1 = '#0f172a';
+    var bg = (c2 && /^#[0-9a-fA-F]{6}$/.test(c2))
+      ? 'linear-gradient(to bottom,' + c1 + ',' + c2 + ')'
+      : c1;
+    document.documentElement.style.setProperty('--sidebar-bg', bg);
+  }
+
   var liveColorMap = {
-    'primary_color': function (v) {
-      document.documentElement.style.setProperty('--sidebar-bg', v);
-    },
+    'primary_color': function () { _rebuildSidebarBg(); },
+    'primary_color_2': function () { _rebuildSidebarBg(); },
     'secondary_color': function (v) {
       document.documentElement.style.setProperty('--primary', v);
       document.documentElement.style.setProperty(

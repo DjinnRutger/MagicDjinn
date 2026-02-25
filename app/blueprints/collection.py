@@ -81,7 +81,10 @@ def box():
     items = query.all()
 
     total_qty   = sum(i.quantity for i in items)
-    total_value = sum((i.card.price_for(i.is_foil) or 0) * i.quantity for i in items)
+    total_value = sum(
+        (i.card.price_for(i.is_foil) or 0) * i.quantity
+        for i in items if not i.is_proxy
+    )
 
     return render_template(
         "collection/box.html",
@@ -284,6 +287,7 @@ def edit_card(inv_id):
 
     inv.quantity           = qty
     inv.is_foil            = bool(data.get("is_foil", False))
+    inv.is_proxy           = bool(data.get("is_proxy", False))
     inv.condition          = condition
     inv.purchase_price_usd = purchase
     inv.notes              = str(data.get("notes", ""))[:500]

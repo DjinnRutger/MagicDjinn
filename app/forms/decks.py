@@ -28,6 +28,19 @@ class DeckForm(FlaskForm):
         description="Friends in your groups can view this deck (read-only).",
         default=True,
     )
+    bracket = SelectField(
+        "Bracket",
+        choices=[
+            ("", "— Not set —"),
+            ("1", "Bracket 1 — Precon / Jank"),
+            ("2", "Bracket 2 — Upgraded Precon"),
+            ("3", "Bracket 3 — Optimized"),
+            ("4", "Bracket 4 — High-Power"),
+            ("5", "Bracket 5 — CEDH"),
+        ],
+        default="",
+        validators=[Optional()],
+    )
 
     # ── Import options (only shown on new deck) ───────────────────────────────
     import_type = RadioField(
@@ -69,3 +82,42 @@ class DeckForm(FlaskForm):
     )
 
     submit = SubmitField("Save Deck")
+
+
+class DeckImportForm(FlaskForm):
+    """Minimal form for streaming import of more cards into an existing deck."""
+    import_type = RadioField(
+        "Import from",
+        choices=[
+            ("decklist", "Paste decklist"),
+            ("moxfield", "Moxfield export (paste)"),
+        ],
+        default="decklist",
+    )
+    decklist_text = TextAreaField(
+        "Decklist",
+        validators=[Optional()],
+        render_kw={
+            "rows": 10,
+            "placeholder": (
+                "4 Lightning Bolt (LEA)\n"
+                "4 Counterspell\n"
+                "1 Black Lotus (LEA) 232\n"
+                "// One card per line: qty name (SET) collector#"
+            ),
+        },
+    )
+    moxfield_text = TextAreaField(
+        "Moxfield export",
+        validators=[Optional()],
+        render_kw={
+            "rows": 12,
+            "placeholder": (
+                "Paste the text from Moxfield → Export → Text\n\n"
+                "Deck\n"
+                "1 Hearthhull, the Worldseed (EOC) 1\n"
+                "1 Beast Within (PLST) BBD-190"
+            ),
+        },
+    )
+    submit = SubmitField("Import Cards")
