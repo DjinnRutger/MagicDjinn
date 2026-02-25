@@ -327,3 +327,23 @@ MagicDjinn/
 ├── run.py                   # Entry point — python run.py
 └── CLAUDE.md                # AI coding guidelines
 ```
+
+## Installing New Versions
+# 1) Pull latest code
+`git -C /var/www/hjlwebdata/magic/MagicDjinn pull --ff-only origin main`
+
+# 2) Update dependencies (if any changed)
+`source /var/www/hjlwebdata/magic/MagicDjinn/.venv/bin/activate`
+`pip install -r /var/www/hjlwebdata/magic/MagicDjinn/requirements.txt`
+
+# 3) Restart app service
+`sudo systemctl restart magicdjinn.service`
+
+# 4) Quick health check
+`sudo systemctl --no-pager --lines=30 status magicdjinn.service`
+`curl -I https://magic.hjlwebdata.com`
+
+If git pull --ff-only fails, it usually means local commits/divergence; stop there and inspect with:
+
+`git -C /var/www/hjlwebdata/magic/MagicDjinn status -sb`
+`git -C /var/www/hjlwebdata/magic/MagicDjinn log --oneline --decorate -n 10`
