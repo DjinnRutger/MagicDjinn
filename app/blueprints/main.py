@@ -37,8 +37,8 @@ def dashboard():
     # Total collection value (box + all decks) — Python loop is fine at personal scale
     all_inv = Inventory.query.filter_by(user_id=current_user.id).all()
     collection_value = round(
-        sum((inv.card.price_for(inv.is_foil) or 0) * inv.quantity
-            for inv in all_inv if inv.card),
+        sum((inv.effective_unit_price or 0) * inv.quantity
+            for inv in all_inv if not inv.is_proxy),
         2,
     )
 

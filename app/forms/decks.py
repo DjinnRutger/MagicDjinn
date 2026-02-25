@@ -80,6 +80,10 @@ class DeckForm(FlaskForm):
             ),
         },
     )
+    mark_all_proxy = BooleanField(
+        "Mark all imported cards as Proxy",
+        default=False,
+    )
 
     submit = SubmitField("Save Deck")
 

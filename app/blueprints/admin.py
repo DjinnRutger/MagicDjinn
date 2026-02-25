@@ -1,4 +1,8 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+import os
+import time as _time
+import urllib.request
+
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app
 from flask_login import login_required, current_user
 from markupsafe import Markup, escape
 
@@ -13,6 +17,75 @@ from app.utils.helpers import log_audit
 from app.utils.settings import get_settings_by_category
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+# ── Version check (cached, runs at most once per hour) ───────────────────────
+
+_GITHUB_VERSION_URL = (
+    "https://raw.githubusercontent.com/DjinnRutger/MagicDjinn/main/version.txt"
+)
+_ver_cache: dict = {"ts": 0.0, "local": "0.0.0", "remote": None, "newer": False}
+_VER_TTL = 3600  # seconds
+
+
+def _ver_tuple(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0,)
+
+
+def _check_new_version() -> tuple:
+    """Return (local_ver, remote_ver, update_available). Cached for 1 hour."""
+    global _ver_cache
+    now = _time.time()
+    if now - _ver_cache["ts"] < _VER_TTL:
+        return _ver_cache["local"], _ver_cache["remote"], _ver_cache["newer"]
+
+    # Read local version.txt (project root, one level above app/)
+    try:
+        vfile = os.path.join(os.path.dirname(current_app.root_path), "version.txt")
+        with open(vfile) as fh:
+            local = fh.read().strip()
+    except Exception:
+        local = "0.0.0"
+
+    # Fetch remote version with short timeout
+    try:
+        req = urllib.request.Request(
+            _GITHUB_VERSION_URL, headers={"User-Agent": "MagicDjinn"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            remote = resp.read().decode().strip()
+    except Exception:
+        _ver_cache = {"ts": now, "local": local, "remote": None, "newer": False}
+        return local, None, False
+
+    newer = _ver_tuple(remote) > _ver_tuple(local)
+    _ver_cache = {"ts": now, "local": local, "remote": remote, "newer": newer}
+    return local, remote, newer
+
+
+def _notify_admins_of_update(remote_ver: str) -> None:
+    """Create one unread version_update notification per admin (idempotent)."""
+    from app.models.notification import Notification
+    msg = f"MagicDjinn v{remote_ver} is available — check GitHub to update"
+    admins = User.query.filter(
+        db.or_(User.is_admin == True, User.role.has(name="Administrator"))  # noqa: E712
+    ).all()
+    changed = False
+    for admin in admins:
+        exists = Notification.query.filter_by(
+            user_id=admin.id, type="version_update", message=msg
+        ).first()
+        if not exists:
+            db.session.add(Notification(
+                user_id=admin.id,
+                type="version_update",
+                message=msg,
+            ))
+            changed = True
+    if changed:
+        db.session.commit()
 
 
 # ── Blueprint-wide access guard ─────────────────────────────────────────────
@@ -38,7 +111,20 @@ def index():
         "total_logs":       AuditLog.query.count(),
     }
     recent_logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(15).all()
-    return render_template("admin/index.html", stats=stats, recent_logs=recent_logs, active_page="admin")
+
+    local_ver, remote_ver, update_available = _check_new_version()
+    if update_available and remote_ver:
+        _notify_admins_of_update(remote_ver)
+
+    return render_template(
+        "admin/index.html",
+        stats=stats,
+        recent_logs=recent_logs,
+        local_ver=local_ver,
+        remote_ver=remote_ver,
+        update_available=update_available,
+        active_page="admin",
+    )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -244,7 +330,18 @@ def settings():
         flash("Settings saved successfully.", "success")
         return redirect(url_for("admin.settings"))
 
-    return render_template("admin/settings.html", categorized=categorized, active_page="admin_settings")
+    local_ver, remote_ver, update_available = _check_new_version()
+    if update_available and remote_ver:
+        _notify_admins_of_update(remote_ver)
+
+    return render_template(
+        "admin/settings.html",
+        categorized=categorized,
+        local_ver=local_ver,
+        remote_ver=remote_ver,
+        update_available=update_available,
+        active_page="admin_settings",
+    )
 
 
 # ── Friend Groups ─────────────────────────────────────────────────────────────

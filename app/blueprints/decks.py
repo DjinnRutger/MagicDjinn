@@ -116,6 +116,28 @@ def new_deck():
             )
 
         deck.color_identity = _compute_color_identity(deck)
+
+        # ── Auto-set cover card + commander on import ─────────────────────────
+        if result and result.successes:
+            first_card = result.successes[0]["card"]
+            deck.cover_card_scryfall_id = first_card.scryfall_id
+            if deck.format == "Commander":
+                from app.models.inventory import Inventory as _Inv
+                first_inv = _Inv.query.filter_by(
+                    user_id=current_user.id,
+                    card_scryfall_id=first_card.scryfall_id,
+                    current_deck_id=deck.id,
+                ).first()
+                if first_inv:
+                    first_inv.is_commander = True
+
+        # ── Mark all as proxy if requested ────────────────────────────────────
+        if result and form.mark_all_proxy.data:
+            from app.models.inventory import Inventory as _Inv
+            _Inv.query.filter_by(
+                current_deck_id=deck.id, user_id=current_user.id
+            ).update({"is_proxy": True}, synchronize_session="fetch")
+
         db.session.commit()
 
         log_audit("deck_created", "deck", deck.id, f"Created deck '{deck.name}'")
@@ -181,11 +203,12 @@ def new_deck_stream():
     visible    = form.is_visible_to_friends.data
     raw_bracket = form.bracket.data
     bracket_val = int(raw_bracket) if raw_bracket else None
-    import_type = form.import_type.data
-    text       = (form.decklist_text.data if import_type == "decklist"
-                  else form.moxfield_text.data) or ""
-    is_moxfield = import_type == "moxfield"
-    has_import  = bool(text.strip()) and import_type in ("decklist", "moxfield")
+    import_type    = form.import_type.data
+    text           = (form.decklist_text.data if import_type == "decklist"
+                      else form.moxfield_text.data) or ""
+    is_moxfield    = import_type == "moxfield"
+    has_import     = bool(text.strip()) and import_type in ("decklist", "moxfield")
+    mark_all_proxy = form.mark_all_proxy.data
 
     def _gen():
         try:
@@ -211,6 +234,28 @@ def new_deck_stream():
                 result = ImportResult()
 
             deck.color_identity = _compute_color_identity(deck)
+
+            # ── Auto-set cover card + commander on import ─────────────────────
+            if result and result.successes:
+                first_card = result.successes[0]["card"]
+                deck.cover_card_scryfall_id = first_card.scryfall_id
+                if fmt == "Commander":
+                    from app.models.inventory import Inventory as _Inv
+                    first_inv = _Inv.query.filter_by(
+                        user_id=user_id,
+                        card_scryfall_id=first_card.scryfall_id,
+                        current_deck_id=deck.id,
+                    ).first()
+                    if first_inv:
+                        first_inv.is_commander = True
+
+            # ── Mark all as proxy if requested ────────────────────────────────
+            if mark_all_proxy and has_import:
+                from app.models.inventory import Inventory as _Inv
+                _Inv.query.filter_by(
+                    current_deck_id=deck.id, user_id=user_id
+                ).update({"is_proxy": True}, synchronize_session="fetch")
+
             db.session.commit()
             log_audit("deck_created", "deck", deck.id, f"Created deck '{name}'")
             from app.utils.feed_service import create_deck_post
@@ -316,7 +361,7 @@ def detail(deck_id):
     sideboard  = [i for i in deck_cards if i.is_sideboard]
     total_qty  = sum(i.quantity for i in mainboard)
     total_value = sum(
-        (i.card.price_for(i.is_foil) or 0) * i.quantity
+        (i.effective_unit_price or 0) * i.quantity
         for i in deck_cards if not i.is_proxy
     )
 

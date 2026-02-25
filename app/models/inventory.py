@@ -74,14 +74,23 @@ class Inventory(db.Model):
         return self.current_deck_id is None
 
     @property
+    def effective_unit_price(self) -> float | None:
+        """Market price per copy, falling back to purchase_price_usd when absent."""
+        if self.card is not None:
+            market = self.card.price_for(self.is_foil)
+            if market is not None:
+                return market
+        if self.purchase_price_usd is not None:
+            return float(self.purchase_price_usd)
+        return None
+
+    @property
     def current_value(self) -> float | None:
-        """Current market value of this inventory row (quantity × unit price).
+        """Current value of this inventory row (quantity × unit price).
         Returns None for proxy cards since they have no real monetary value."""
         if self.is_proxy:
             return None
-        if self.card is None:
-            return None
-        unit = self.card.price_for(self.is_foil)
+        unit = self.effective_unit_price
         if unit is None:
             return None
         return round(unit * self.quantity, 2)

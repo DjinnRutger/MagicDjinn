@@ -106,6 +106,18 @@
               Sideboard cards are automatically detected.
             </div>
           </div>
+
+          <div id="import-proxy-section" style="display:none" class="mb-2">
+            <div class="form-check">
+              {{ form.mark_all_proxy(class="form-check-input", id="mark_all_proxy") }}
+              <label class="form-check-label" for="mark_all_proxy">
+                {{ form.mark_all_proxy.label.text }}
+              </label>
+              <div class="form-text text-muted" style="font-size:.8rem">
+                Use this if you're tracking a proxy / test deck. Cards will be excluded from value calculations.
+              </div>
+            </div>
+          </div>
           {% endif %}
 
           {% if deck and friends is defined %}
@@ -195,6 +207,13 @@ function updateImportUI() {
     type === 'decklist' ? '' : 'none';
   document.getElementById('import-moxfield-section').style.display =
     type === 'moxfield' ? '' : 'none';
+  var hasImport = (type === 'decklist' || type === 'moxfield');
+  document.getElementById('import-proxy-section').style.display =
+    hasImport ? '' : 'none';
+  if (!hasImport) {
+    var cb = document.getElementById('mark_all_proxy');
+    if (cb) cb.checked = false;
+  }
 }
 document.addEventListener('DOMContentLoaded', updateImportUI);
 

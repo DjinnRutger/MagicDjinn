@@ -77,13 +77,13 @@ class Deck(db.Model):
 
     @property
     def total_value(self) -> float:
-        """Approximate deck value in USD based on current Scryfall prices.
-        Proxy cards are excluded from the total."""
+        """Approximate deck value in USD. Uses market price when available,
+        falling back to purchase_price_usd. Proxy cards are excluded."""
         total = 0.0
         for inv in self.cards:
             if inv.is_proxy:
                 continue
-            price = inv.card.price_for(inv.is_foil) if inv.card else None
+            price = inv.effective_unit_price
             if price is not None:
                 total += price * inv.quantity
         return round(total, 2)
