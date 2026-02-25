@@ -598,8 +598,9 @@
     }
     avatarStatus.textContent = "Click an image to use it as your avatar.";
     avatarGrid.innerHTML = cards.map(function (c) {
+      var label = c.name + ' — ' + (c.set_name || c.set_code);
       return '<div style="cursor:pointer;border-radius:6px;overflow:hidden;aspect-ratio:1;border:2px solid transparent;transition:border-color .15s" '
-           + 'class="avatar-result-tile" data-url="' + c.art_crop + '" title="' + c.name + ' (' + c.set_code + ')">'
+           + 'class="avatar-result-tile" data-url="' + c.art_crop + '" title="' + label + '">'
            + '<img src="' + c.art_crop + '" alt="' + c.name + '" loading="lazy" '
            + 'style="width:100%;height:100%;object-fit:cover;display:block"></div>';
     }).join("");

@@ -45,6 +45,13 @@
     {# ── Right: card info + edit controls ── #}
     <div class="card-modal-details-col">
 
+      {# Return-to-Box lives at the very top so it's near the close button #}
+      <div id="modal-return-box-top" style="display:none" class="mb-2">
+        <button id="modal-return-box-btn" type="button" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-box-arrow-left me-1"></i>Return to Box
+        </button>
+      </div>
+
       <h5 id="modal-card-name" class="mb-1 fw-bold lh-sm">—</h5>
       <small id="modal-card-set" class="text-muted d-block mb-1"></small>
       <div id="modal-mana-cost" class="mb-1"
@@ -112,16 +119,7 @@
 
         <div id="modal-alert" style="display:none" class="mb-2"></div>
 
-        <div class="d-flex gap-2 mb-2">
-          <button id="modal-save-btn" type="button" class="btn btn-primary btn-sm flex-grow-1">
-            <i class="bi bi-check-lg me-1"></i>Save Changes
-          </button>
-          <button id="modal-delete-btn" type="button" class="btn btn-outline-danger btn-sm">
-            <i class="bi bi-trash"></i>
-          </button>
-        </div>
-
-        {# ── Deck-only actions ── #}
+        {# ── Deck-only checkboxes ── #}
         <div id="modal-deck-section" style="display:none">
           <hr class="my-2">
           <div class="d-flex gap-3 mb-2 flex-wrap">
@@ -144,8 +142,15 @@
               <i class="bi bi-collection me-1 text-secondary"></i>Sideboard
             </label>
           </div>
-          <button id="modal-return-box-btn" type="button" class="btn btn-outline-secondary btn-sm w-100">
-            <i class="bi bi-box-arrow-left me-1"></i>Return to Box
+        </div>
+
+        {# Save / Delete always at the bottom #}
+        <div class="d-flex gap-2 mt-3">
+          <button id="modal-save-btn" type="button" class="btn btn-primary btn-sm flex-grow-1">
+            <i class="bi bi-check-lg me-1"></i>Save Changes
+          </button>
+          <button id="modal-delete-btn" type="button" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-trash"></i>
           </button>
         </div>
       </div>
@@ -359,6 +364,8 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
     _deckCtx = { deck_id: deckId, cover_scryfall_id: coverScryfallId, inv_id: invId, csrf: csrfToken };
     var sec = document.getElementById('modal-deck-section');
     if (sec) sec.style.display = '';
+    var rtb = document.getElementById('modal-return-box-top');
+    if (rtb) rtb.style.display = '';
     var cb = document.getElementById('modal-cover-card');
     if (cb) cb.checked = !!(coverScryfallId && dlg.dataset.scryfallId === coverScryfallId);
     // Sideboard checkbox
@@ -377,6 +384,8 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
     _deckCtx = null;
     var sec = document.getElementById('modal-deck-section');
     if (sec) sec.style.display = 'none';
+    var rtb = document.getElementById('modal-return-box-top');
+    if (rtb) rtb.style.display = 'none';
   };
 
   /* Cover card */

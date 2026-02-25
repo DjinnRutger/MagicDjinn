@@ -207,13 +207,14 @@ def avatar_art_search():
     if len(q) < 2:
         return jsonify([])
     try:
-        cards = search_cards(q, page=1)
+        cards = search_cards(q, page=1, unique="prints")
         results = []
-        for c in cards[:16]:
+        for c in cards[:48]:
             if c.get("image_art_crop"):
                 results.append({
                     "name":        c["name"],
                     "set_code":    c.get("set_code", ""),
+                    "set_name":    c.get("set_name", ""),
                     "art_crop":    c["image_art_crop"],
                     "scryfall_id": c["scryfall_id"],
                 })

@@ -159,14 +159,16 @@ def get_card_by_set(set_code: str, collector_number: str) -> dict:
     return normalize_card(data)
 
 
-def search_cards(query: str, page: int = 1) -> list[dict]:
+def search_cards(query: str, page: int = 1, unique: str = "cards") -> list[dict]:
     """
     Search Scryfall using a full Scryfall search query string.
     Returns up to 175 results per page (Scryfall default).
 
     Args:
-        query: Scryfall query string, e.g. 'c:red t:creature cmc<=2'
-        page:  Page number (1-indexed).
+        query:  Scryfall query string, e.g. 'c:red t:creature cmc<=2'
+        page:   Page number (1-indexed).
+        unique: Scryfall deduplication strategy — 'cards' (one per oracle),
+                'prints' (every printing), or 'art' (one per art treatment).
 
     Returns:
         List of normalized card dicts.
@@ -174,7 +176,10 @@ def search_cards(query: str, page: int = 1) -> list[dict]:
     Raises:
         ScryfallError: Bad query or API error.
     """
-    data = _get(f"{_BASE}/cards/search", params={"q": query, "page": page})
+    params: dict = {"q": query, "page": page}
+    if unique != "cards":
+        params["unique"] = unique
+    data = _get(f"{_BASE}/cards/search", params=params)
     return [normalize_card(card) for card in data.get("data", [])]
 
 
