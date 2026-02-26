@@ -90,7 +90,16 @@ def create_app(config_name: str = "default") -> Flask:
                     pass  # Blueprint not registered yet — skip silently
             return items
 
-        return dict(get_setting=get_setting, admin_nav=admin_nav, sidebar_nav=sidebar_nav)
+        # Read local version once per request (tiny file, negligible cost)
+        try:
+            import os as _os
+            _vfile = _os.path.join(_os.path.dirname(app.root_path), "version.txt")
+            with open(_vfile) as _f:
+                _app_version = _f.read().strip()
+        except Exception:
+            _app_version = "?"
+
+        return dict(get_setting=get_setting, admin_nav=admin_nav, sidebar_nav=sidebar_nav, app_version=_app_version)
 
     # ── First-run guard ──────────────────────────────────────────────────────
     @app.before_request

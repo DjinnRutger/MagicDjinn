@@ -259,8 +259,9 @@
   </main>
 
   {# Footer #}
-  <footer class="main-footer">
-    {{ get_setting('footer_text', 'MagicDjinn — Built with Flask') }}
+  <footer class="main-footer d-flex justify-content-between align-items-center">
+    <span>{{ get_setting('footer_text', 'MagicDjinn — Built with Flask') }}</span>
+    <span class="text-muted font-monospace" style="font-size:.75rem">v{{ app_version }}</span>
   </footer>
 
 </div>{# /main-wrapper #}
