@@ -2,7 +2,7 @@ import os
 import time as _time
 import urllib.request
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify
 from flask_login import login_required, current_user
 from markupsafe import Markup, escape
 
@@ -310,13 +310,22 @@ def role_delete(role_id: int):
 def settings():
     categorized = get_settings_by_category()
 
+    _PRICE_REFRESH_KEYS = {
+        "price_refresh_frequency", "price_refresh_day_of_week",
+        "price_refresh_day_of_month", "price_refresh_time",
+    }
+
     if request.method == "POST":
+        price_schedule_changed = False
+
         # Update every setting that appears in the form
         for key in request.form:
             if key.startswith("csrf_"):
                 continue
             s = Setting.query.filter_by(key=key).first()
             if s:
+                if key in _PRICE_REFRESH_KEYS and s.value != request.form[key]:
+                    price_schedule_changed = True
                 s.value = request.form[key]
 
         # Unchecked booleans are absent from POST data – force them to 'false'
@@ -327,6 +336,16 @@ def settings():
 
         log_audit("updated", "settings", details="bulk update")
         db.session.commit()
+
+        # Reschedule APScheduler job if price refresh timing changed
+        if price_schedule_changed:
+            try:
+                from app import _schedule_price_refresh
+                from app.extensions import scheduler
+                _schedule_price_refresh(current_app._get_current_object())
+            except Exception:
+                pass  # Non-fatal — job will use old schedule until restart
+
         flash("Settings saved successfully.", "success")
         return redirect(url_for("admin.settings"))
 
@@ -420,6 +439,54 @@ def friend_group_delete(group_id: int):
     db.session.commit()
     flash(f"Friend group '{name}' deleted.", "success")
     return redirect(url_for("admin.friend_groups"))
+
+
+# ── Card Values: Refresh Now ──────────────────────────────────────────────────
+
+@admin_bp.route("/card-values/refresh-now", methods=["POST"])
+def card_values_refresh_now():
+    """AJAX endpoint — runs a price refresh synchronously in the request context.
+
+    Threading is intentionally avoided: SQLite cannot tolerate a second thread
+    committing while the request thread still holds a shared lock on the same
+    connection (raises "database is locked").  Releasing the scoped session
+    first and running inline is safe and simpler.
+    """
+    from app.utils.price_service import _do_refresh
+
+    # Release the current scoped session so SQLite's shared lock is freed
+    # before _do_refresh opens its own writes.
+    db.session.remove()
+
+    try:
+        refreshed, history_added = _do_refresh(current_app._get_current_object())
+        log_audit(
+            "price_refresh", "cards",
+            details=f"Manual refresh — {refreshed} cards checked, {history_added} history rows written",
+        )
+        return jsonify(
+            success=True,
+            message=(
+                f"Price refresh complete. "
+                f"{refreshed} card{'s' if refreshed != 1 else ''} checked, "
+                f"{history_added} price record{'s' if history_added != 1 else ''} saved."
+            ),
+            refreshed_count=refreshed,
+            history_count=history_added,
+        )
+    except Exception as exc:
+        current_app.logger.exception("Manual price refresh failed")
+        return jsonify(success=False, message=f"Refresh failed: {exc}"), 500
+
+
+# ── API: Price history (for Chart.js modal) ───────────────────────────────────
+
+@admin_bp.route("/api/cards/<scryfall_id>/price-history")
+def card_price_history_api(scryfall_id: str):
+    """Return price history JSON for Chart.js."""
+    from app.utils.price_service import get_price_history
+    days = request.args.get("days", 90, type=int)
+    return jsonify(get_price_history(scryfall_id, days=days))
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────

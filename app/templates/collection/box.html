@@ -2,6 +2,7 @@
 {% block title %}My Collection — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
 
 {% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <style>
 /* ── MTG Card Grid ────────────────────────────────────────────────────────── */
 /* rem units inherit root font-size, so tiles grow with the ui_scale setting */
@@ -179,8 +180,18 @@
     <div class="mtg-card-info">
       <div class="mtg-card-name">{{ inv.card.name }}</div>
       <div class="mtg-card-meta">
-        {% if inv.is_foil and inv.card.usd_foil %}${{ "%.2f"|format(inv.card.usd_foil) }}
-        {% elif inv.card.usd %}${{ "%.2f"|format(inv.card.usd) }}
+        {% set _dir = price_directions.get(inv.card.scryfall_id) %}
+        {% if inv.is_foil and inv.card.usd_foil %}
+          <span class="box-price-link" data-sid="{{ inv.card.scryfall_id }}" data-name="{{ inv.card.name }}" data-foil="{{ '1' if inv.is_foil else '' }}"
+                style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" title="View price history">
+            ${{ "%.2f"|format(inv.card.usd_foil) }}{% if _dir == 'up' %}<span style="color:#16a34a;font-size:.7em">↑</span>{% elif _dir == 'down' %}<span style="color:#dc2626;font-size:.7em">↓</span>{% endif %}
+          </span>
+        {% elif inv.card.usd %}
+          <span class="box-price-link" data-sid="{{ inv.card.scryfall_id }}" data-name="{{ inv.card.name }}" data-foil="{{ '1' if inv.is_foil else '' }}"
+                style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" title="View price history">
+            ${{ "%.2f"|format(inv.card.usd) }}{% if _dir == 'up' %}<span style="color:#16a34a;font-size:.7em">↑</span>{% elif _dir == 'down' %}<span style="color:#dc2626;font-size:.7em">↓</span>{% endif %}
+          </span>
+        {% elif inv.purchase_price_usd %}${{ "%.2f"|format(inv.purchase_price_usd) }}
         {% else %}—{% endif %}
         · {{ inv.condition.value }}
       </div>
@@ -207,6 +218,9 @@
 
 {# ── Card modal ── #}
 {% include "components/card_modal.html" %}
+
+{# ── Price History Modal ── #}
+{% include "components/price_history_modal.html" %}
 
 {% endblock %}
 
@@ -377,5 +391,15 @@
   });
 
 })();
+
+// ── Price link clicks (event delegation on the card grid) ────────────────────
+document.getElementById('cardGrid') && document.getElementById('cardGrid').addEventListener('click', function (e) {
+  var link = e.target.closest('.box-price-link');
+  if (!link) return;
+  e.stopPropagation();
+  if (typeof openPriceHistoryModal === 'function') {
+    openPriceHistoryModal(link.dataset.sid, link.dataset.name, !!link.dataset.foil);
+  }
+});
 </script>
 {% endblock %}

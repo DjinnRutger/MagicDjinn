@@ -6,7 +6,7 @@ import os
 from flask import Flask, render_template, redirect, url_for, request
 from sqlalchemy import inspect, text
 from app.config import config
-from app.extensions import db, login_manager, csrf, limiter, migrate
+from app.extensions import db, login_manager, csrf, limiter, migrate, scheduler
 
 
 def create_app(config_name: str = "default") -> Flask:
@@ -141,7 +141,78 @@ def create_app(config_name: str = "default") -> Flask:
         _run_migrations()
         _seed_database()
 
+    # ── APScheduler: price refresh cron job ──────────────────────────────────
+    # Guard against Werkzeug reloader spawning two schedulers in debug mode.
+    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        if not scheduler.running:
+            _schedule_price_refresh(app)
+            scheduler.start()
+
     return app
+
+
+def _schedule_price_refresh(app) -> None:
+    """Read price refresh settings and add/replace the APScheduler cron job."""
+    from app.utils.settings import get_setting
+
+    with app.app_context():
+        frequency    = get_setting("price_refresh_frequency",    "daily")
+        day_of_week  = get_setting("price_refresh_day_of_week",  "Monday")
+        day_of_month = int(get_setting("price_refresh_day_of_month", "1"))
+        refresh_time = get_setting("price_refresh_time",          "03:00")
+
+    try:
+        hour, minute = (int(x) for x in refresh_time.split(":"))
+    except Exception:
+        hour, minute = 3, 0
+
+    _DOW_MAP = {
+        "monday": "mon", "tuesday": "tue", "wednesday": "wed",
+        "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
+    }
+
+    # Remove existing job (idempotent on re-schedule)
+    if scheduler.get_job("price_refresh"):
+        scheduler.remove_job("price_refresh")
+
+    from app.utils.price_service import refresh_all_card_prices
+
+    if frequency == "weekly":
+        dow = _DOW_MAP.get(day_of_week.lower(), "mon")
+        scheduler.add_job(
+            refresh_all_card_prices,
+            trigger="cron",
+            id="price_refresh",
+            day_of_week=dow,
+            hour=hour,
+            minute=minute,
+            args=[app],
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+    elif frequency == "monthly":
+        scheduler.add_job(
+            refresh_all_card_prices,
+            trigger="cron",
+            id="price_refresh",
+            day=day_of_month,
+            hour=hour,
+            minute=minute,
+            args=[app],
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+    else:  # daily (default)
+        scheduler.add_job(
+            refresh_all_card_prices,
+            trigger="cron",
+            id="price_refresh",
+            hour=hour,
+            minute=minute,
+            args=[app],
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
 
 
 # ── Migration helper ─────────────────────────────────────────────────────────
@@ -196,6 +267,11 @@ def _run_migrations() -> None:
     if "deck_shares" not in existing_tables:
         from app.models.deck_share import DeckShare
         DeckShare.__table__.create(db.engine)
+
+    # ── card_price_history table ──────────────────────────────────────────────
+    if "card_price_history" not in existing_tables:
+        from app.models.card_price_history import CardPriceHistory
+        CardPriceHistory.__table__.create(db.engine)
 
     # ── feed tables ───────────────────────────────────────────────────────────
     if "feed_posts" not in existing_tables:
@@ -257,6 +333,31 @@ def _run_migrations() -> None:
         ("primary_color_2", "", "color",
          "Sidebar gradient end colour — leave blank for a flat sidebar",
          "appearance", None),
+        # ── Card Values ───────────────────────────────────────────────────────
+        ("price_refresh_frequency",    "daily",   "select",
+         "How often to refresh card prices from Scryfall",
+         "card_values", '["daily","weekly","monthly"]'),
+        ("price_refresh_day_of_week",  "Monday",  "select",
+         "Day of week for weekly price refresh",
+         "card_values", '["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]'),
+        ("price_refresh_day_of_month", "1",       "number",
+         "Day of month for monthly price refresh (1–28)",
+         "card_values", None),
+        ("price_refresh_time",         "03:00",   "text",
+         "Time for the price refresh job (HH:MM, 24-hour UTC)",
+         "card_values", None),
+        ("price_keep_history",         "true",    "boolean",
+         "Store price history for trend arrows and graphs",
+         "card_values", None),
+        ("price_history_retention_days","90",     "number",
+         "Days to keep price history rows before pruning",
+         "card_values", None),
+        ("price_notify_change",        "false",   "boolean",
+         "Notify users when a card in their collection changes price",
+         "card_values", None),
+        ("price_notify_threshold",     "10",      "number",
+         "Minimum price change percentage to trigger a notification",
+         "card_values", None),
     ]
     for key, value, stype, desc, cat, opts in _new_settings:
         if not Setting.query.filter_by(key=key).first():
@@ -441,7 +542,16 @@ def _seed_database() -> None:
         ("login_layout",      "above",                      "select",  "Login page layout: logo above the form or side-by-side", "appearance", '["above","side"]'),
         ("enable_flying_cards", "true",                     "boolean", "Animate card images flying across the dashboard", "appearance", None),
         ("scryfall_cache_days",  "7",                       "number",  "Days before cached card data is considered stale", "general",    None),
-        ("primary_color_2",      "",                        "color",   "Sidebar gradient end colour — leave blank for a flat sidebar", "appearance", None),
+        ("primary_color_2",            "",        "color",   "Sidebar gradient end colour — leave blank for a flat sidebar", "appearance", None),
+        # ── Card Values ──────────────────────────────────────────────────────
+        ("price_refresh_frequency",    "daily",   "select",  "How often to refresh card prices from Scryfall",              "card_values", '["daily","weekly","monthly"]'),
+        ("price_refresh_day_of_week",  "Monday",  "select",  "Day of week for weekly price refresh",                        "card_values", '["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]'),
+        ("price_refresh_day_of_month", "1",       "number",  "Day of month for monthly price refresh (1–28)",               "card_values", None),
+        ("price_refresh_time",         "03:00",   "text",    "Time for the price refresh job (HH:MM, 24-hour UTC)",         "card_values", None),
+        ("price_keep_history",         "true",    "boolean", "Store price history for trend arrows and graphs",             "card_values", None),
+        ("price_history_retention_days","90",     "number",  "Days to keep price history rows before pruning",              "card_values", None),
+        ("price_notify_change",        "false",   "boolean", "Notify users when a card in their collection changes price",  "card_values", None),
+        ("price_notify_threshold",     "10",      "number",  "Minimum price change percentage to trigger a notification",   "card_values", None),
     ]
     for key, value, stype, desc, cat, opts in setting_defs:
         if not Setting.query.filter_by(key=key).first():

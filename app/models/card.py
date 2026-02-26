@@ -51,6 +51,12 @@ class Card(db.Model):
     inventory_items = db.relationship(
         "Inventory", back_populates="card", lazy="dynamic"
     )
+    price_history = db.relationship(
+        "CardPriceHistory",
+        back_populates="card",
+        order_by="CardPriceHistory.recorded_at.desc()",
+        lazy="dynamic",
+    )
 
     # ── Helpers ─────────────────────────────────────────────────────────────
     @property
@@ -79,6 +85,12 @@ class Card(db.Model):
     def price_for(self, is_foil: bool = False) -> float | None:
         """Return the appropriate price based on foil status."""
         return self.usd_foil if is_foil else self.usd
+
+    @property
+    def price_direction(self) -> str | None:
+        """Compare the last 2 price history rows. Returns 'up', 'down', 'same', or None."""
+        from app.utils.price_service import get_price_direction
+        return get_price_direction(self.scryfall_id)
 
     def __repr__(self) -> str:
         return f"<Card {self.name} [{self.set_code}]>"

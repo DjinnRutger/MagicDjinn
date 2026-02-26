@@ -2,6 +2,7 @@
 {% block title %}{{ deck.name }} — {{ get_setting('app_name', 'MagicDjinn') }}{% endblock %}
 
 {% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <style>
 /* ── Format badge colours ──────────────────────────────────────────────────── */
 .fmt-Commander  { background:#7c3aed; color:#fff }
@@ -473,6 +474,9 @@ dialog#importDialog::backdrop { background: rgba(0,0,0,.55); }
 
 {# ── Card detail modal ─────────────────────────────────────────────────────── #}
 {% include "components/card_modal.html" %}
+
+{# ── Price History Modal ──────────────────────────────────────────────────── #}
+{% include "components/price_history_modal.html" %}
 
 {% endblock %}
 

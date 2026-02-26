@@ -82,9 +82,16 @@ def box():
 
     total_qty   = sum(i.quantity for i in items)
     total_value = sum(
-        (i.card.price_for(i.is_foil) or 0) * i.quantity
+        (i.effective_unit_price or 0) * i.quantity
         for i in items if not i.is_proxy
     )
+
+    # Batch-compute price directions to avoid N+1 queries
+    from app.utils.price_service import get_price_direction
+    price_directions = {
+        inv.card.scryfall_id: get_price_direction(inv.card.scryfall_id)
+        for inv in items
+    }
 
     return render_template(
         "collection/box.html",
@@ -94,6 +101,7 @@ def box():
         search=search,
         sort=sort,
         foil_only=foil_only,
+        price_directions=price_directions,
         active_page="collection",
     )
 

@@ -214,11 +214,14 @@ def _inv_to_dict(inv, location: str) -> dict:
         "scryfall_id": card.scryfall_id or "",
         "usd":         float(card.usd)      if card.usd      is not None else None,
         "usd_foil":    float(card.usd_foil) if card.usd_foil is not None else None,
+        "purchase_price_usd": float(inv.purchase_price_usd) if inv.purchase_price_usd is not None else None,
         "quantity":    inv.quantity,
         "is_foil":            inv.is_foil,
+        "is_proxy":           inv.is_proxy,
         "condition":          inv.condition.value if inv.condition else "NM",
         "location":           location,
         "physical_location":  inv.physical_location or "",
+        "price_direction":    inv.card.price_direction,
     }
 
 
@@ -359,6 +362,17 @@ def my_collection_api():
         loc = f"Deck: {deck_map.get(inv.current_deck_id, '?')}" if inv.current_deck_id else "Your Box"
         result.append(_inv_to_dict(inv, loc))
     return jsonify(result)
+
+
+# ── Price history (AJAX — Chart.js modal) ────────────────────────────────────
+
+@cards_bp.route("/api/cards/<scryfall_id>/price-history")
+@login_required
+def card_price_history(scryfall_id: str):
+    """Return price history JSON for the Chart.js modal."""
+    from app.utils.price_service import get_price_history
+    days = request.args.get("days", 90, type=int)
+    return jsonify(get_price_history(scryfall_id, days=days))
 
 
 # ── Printings (AJAX) ──────────────────────────────────────────────────────────

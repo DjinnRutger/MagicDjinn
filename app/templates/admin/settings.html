@@ -36,9 +36,10 @@
 
 {# ── Category display metadata ── #}
 {% set cat_meta = {
-  'general':    {'icon': 'bi-grid-1x2',   'label': 'General',    'desc': 'Application name, footer, and display options'},
-  'appearance': {'icon': 'bi-palette',    'label': 'Appearance', 'desc': 'Colours, themes, layout, and UI scale'},
-  'security':   {'icon': 'bi-shield-lock','label': 'Security',   'desc': 'Authentication, registration, and session settings'},
+  'general':     {'icon': 'bi-grid-1x2',       'label': 'General',      'desc': 'Application name, footer, and display options'},
+  'appearance':  {'icon': 'bi-palette',         'label': 'Appearance',   'desc': 'Colours, themes, layout, and UI scale'},
+  'security':    {'icon': 'bi-shield-lock',     'label': 'Security',     'desc': 'Authentication, registration, and session settings'},
+  'card_values': {'icon': 'bi-graph-up-arrow',  'label': 'Card Values',  'desc': 'Price refresh schedule, history, and notifications'},
 } %}
 
 {# ── Readable label from snake_case key ── #}
@@ -166,6 +167,24 @@
           {% endfor %}
         </div>{# /settings-card #}
 
+        {# ── Card Values: Actions card ── #}
+        {% if category == 'card_values' %}
+        <div class="settings-card mt-3">
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem">
+            <div>
+              <div class="settings-key">Price Refresh Actions</div>
+              <div class="settings-desc">Manually trigger a price refresh for all cards in your database.</div>
+            </div>
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+              <button type="button" id="refreshNowBtn" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh Now
+              </button>
+              <span id="refreshNowStatus" class="text-muted" style="font-size:.82rem"></span>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
       </div>{# /settings-panel #}
       {% endfor %}
     </div>{# /settings-panels #}
@@ -250,6 +269,74 @@
       if (wrap) wrap.classList.toggle('is-on', sw.checked);
     });
   });
+
+  /* ── Card Values: conditional fields ── */
+  function _updatePriceScheduleRows() {
+    var freqEl = document.getElementById('s_price_refresh_frequency');
+    if (!freqEl) return;
+    var freq = freqEl.value;
+    var dowRow = document.getElementById('row_price_refresh_day_of_week');
+    var domRow = document.getElementById('row_price_refresh_day_of_month');
+    if (dowRow) dowRow.style.display = (freq === 'weekly')  ? '' : 'none';
+    if (domRow) domRow.style.display = (freq === 'monthly') ? '' : 'none';
+  }
+
+  // Add row IDs so we can show/hide them
+  (function () {
+    var freqEl = document.getElementById('s_price_refresh_frequency');
+    if (!freqEl) return;
+    var allRows = document.querySelectorAll('#cat-card_values .settings-row');
+    allRows.forEach(function (row) {
+      var inp = row.querySelector('select, input');
+      if (inp && inp.id === 's_price_refresh_day_of_week') row.id = 'row_price_refresh_day_of_week';
+      if (inp && inp.id === 's_price_refresh_day_of_month') row.id = 'row_price_refresh_day_of_month';
+    });
+    _updatePriceScheduleRows();
+    freqEl.addEventListener('change', _updatePriceScheduleRows);
+  })();
+
+  /* ── Card Values: Refresh Now AJAX ── */
+  (function () {
+    var btn    = document.getElementById('refreshNowBtn');
+    var status = document.getElementById('refreshNowStatus');
+    if (!btn) return;
+
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing…';
+      status.textContent = '';
+      status.style.color = '';
+
+      try {
+        var csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        var res  = await fetch('/admin/card-values/refresh-now', {
+          method:  'POST',
+          headers: { 'X-CSRFToken': csrfToken },
+        });
+        var data = await res.json();
+        if (data.success) {
+          status.textContent = data.message;
+          status.style.color = 'var(--bs-success)';
+          btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Done';
+          setTimeout(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Now';
+            status.textContent = '';
+          }, 3000);
+        } else {
+          status.textContent = data.message || 'Refresh failed — check server logs.';
+          status.style.color = 'var(--bs-danger)';
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Now';
+        }
+      } catch (err) {
+        status.textContent = 'Network error — try again.';
+        status.style.color = 'var(--bs-danger)';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Now';
+      }
+    });
+  })();
 
 })();
 </script>

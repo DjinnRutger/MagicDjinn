@@ -14,6 +14,7 @@ from app.models.friend_group import FriendGroup, user_friend_groups
 from app.models.deck_share import DeckShare
 from app.models.notification import Notification
 from app.models.feed import FeedPost, FeedLike, FeedComment
+from app.models.card_price_history import CardPriceHistory
 
 __all__ = [
     "Permission", "Role", "role_permissions",
@@ -25,4 +26,5 @@ __all__ = [
     "DeckShare",
     "Notification",
     "FeedPost", "FeedLike", "FeedComment",
+    "CardPriceHistory",
 ]

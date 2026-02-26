@@ -18,6 +18,7 @@
 {% endblock %}
 
 {% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <style>
 /* ── Tabs ──────────────────────────────────────────────────────────────────── */
 .search-tabs {
@@ -85,31 +86,48 @@
 .leg-banned  { background:#7c3aed22; color:#7c3aed; }
 .leg-restricted { background:#d9770622; color:#d97706; }
 
-/* ── Collection Value list view ─────────────────────────────────────────── */
-.val-row {
-  display: flex; align-items: center; gap: .75rem;
-  padding: .45rem .6rem;
-  border-bottom: 1px solid var(--bs-border-color);
-  cursor: pointer; transition: background .12s;
+/* ── Collection Value card grid ──────────────────────────────────────────── */
+.val-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: .9rem;
 }
-.val-row:last-child { border-bottom: none; }
-.val-row:hover { background: var(--bs-tertiary-bg); }
-.val-thumb {
-  width: 40px; height: 56px; object-fit: cover;
-  border-radius: 4px; flex-shrink: 0;
+@media (min-width: 640px)  { .val-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1100px) { .val-grid { grid-template-columns: repeat(4, 1fr); } }
+
+.val-card {
+  border-radius: 10px; overflow: hidden;
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color);
+  cursor: pointer;
+  transition: transform .2s, box-shadow .2s;
 }
-.val-thumb-ph {
-  width: 40px; height: 56px; flex-shrink: 0;
-  background: var(--bs-tertiary-bg); border-radius: 4px;
+.val-card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 12px 28px rgba(0,0,0,.38); z-index: 5; position: relative; }
+.val-card-img-wrap { position: relative; aspect-ratio: 63/88; }
+.val-card-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px 10px 0 0; }
+.val-card-img-ph {
+  width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  font-size: .9rem; color: var(--bs-secondary-color);
+  font-size: 3rem; color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg); border-radius: 10px 10px 0 0;
 }
-.val-name { font-weight: 600; font-size: .85rem; line-height: 1.25; }
-.val-sub  { font-size: .72rem; color: var(--bs-secondary-color); margin-top: 1px; }
-.val-price { font-weight: 700; font-size: .9rem; color: #16a34a; min-width: 58px; text-align: right; flex-shrink: 0; }
-.val-total { font-size: .7rem; color: var(--bs-secondary-color); text-align: right; min-width: 58px; flex-shrink: 0; }
-.val-qty   { font-size: .75rem; color: var(--bs-secondary-color); text-align: center; min-width: 26px; flex-shrink: 0; }
-.val-rank  { font-size: .62rem; color: var(--bs-secondary-color); min-width: 22px; text-align: right; flex-shrink: 0; }
+.val-card-rank {
+  position: absolute; top: 6px; left: 6px;
+  font-size: .6rem; font-weight: 700;
+  background: rgba(0,0,0,.65); color: #fff;
+  padding: .1rem .38rem; border-radius: 99px; line-height: 1.6;
+}
+.val-card-qty {
+  position: absolute; top: 6px; right: 6px;
+  font-size: .6rem; font-weight: 600;
+  background: rgba(0,0,0,.65); color: #fff;
+  padding: .1rem .38rem; border-radius: 99px; line-height: 1.6;
+}
+.val-card-info  { padding: .5rem .6rem .6rem; }
+.val-card-price { font-size: 1.05rem; font-weight: 800; color: #16a34a; line-height: 1; }
+.val-card-total { font-size: .65rem; color: var(--bs-secondary-color); margin-top: 2px; }
+.val-card-name  { font-size: .72rem; font-weight: 600; margin-top: .38rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.val-card-sub   { font-size: .62rem; color: var(--bs-secondary-color); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 </style>
 {% endblock %}
@@ -266,7 +284,7 @@
     <span class="spinner-border spinner-border-sm me-1"></span> Loading collection…
   </div>
 
-  <div id="valueList" class="border rounded" style="overflow:hidden"></div>
+  <div id="valueList" class="val-grid"></div>
 
   <div id="valueEmpty" class="text-center py-5 text-muted" style="display:none">
     <i class="bi bi-currency-dollar" style="font-size:2.5rem;opacity:.2"></i>
@@ -350,6 +368,9 @@
   </div>
 </dialog>
 
+{# ── Price History Modal (Chart.js) ──────────────────────────────────────── #}
+{% include "components/price_history_modal.html" %}
+
 {# ── Scryfall card detail dialog ──────────────────────────────────────────── #}
 <dialog id="sfDetailDlg" style="max-width:min(720px,95vw);width:100%;border:none;border-radius:14px;padding:0;background:var(--bs-body-bg);color:var(--bs-body-color);box-shadow:0 24px 80px rgba(0,0,0,.55)">
   <div style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
@@ -421,6 +442,32 @@
 {% block scripts %}
 <script>
 const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+/* ── Effective price helper ────────────────────────────────────────────────── *
+ * Returns the best available price for a card object:
+ *   foil market → regular market → purchase price paid → null
+ * ─────────────────────────────────────────────────────────────────────────── */
+function _effectivePrice(card) {
+  if (card.is_foil && card.usd_foil != null) return card.usd_foil;
+  if (card.usd != null) return card.usd;
+  if (card.purchase_price_usd != null) return card.purchase_price_usd;
+  return null;
+}
+
+/* ── Price direction arrow ───────────────────────────────────────────────── */
+function _priceArrow(direction) {
+  if (direction === 'up')   return '<span style="color:#16a34a;font-size:.75em" title="Price up">↑</span>';
+  if (direction === 'down') return '<span style="color:#dc2626;font-size:.75em" title="Price down">↓</span>';
+  return '';
+}
+
+/* ── Open price history modal ───────────────────────────────────────────── */
+function _showPriceHistory(scryfallId, cardName, e, isFoil) {
+  if (e) { e.stopPropagation(); }
+  if (typeof openPriceHistoryModal === 'function') {
+    openPriceHistoryModal(scryfallId, cardName, !!isFoil);
+  }
+}
 
 /* ── Tab switching ────────────────────────────────────────────────────────── */
 function switchTab(tab) {
@@ -702,9 +749,9 @@ function _renderMC(cards) {
   }
   empty.style.display = 'none';
   grid.innerHTML = cards.map(card => {
-    const price = (card.is_foil && card.usd_foil != null)
-      ? `$${card.usd_foil.toFixed(2)}`
-      : (card.usd != null ? `$${card.usd.toFixed(2)}` : '—');
+    const _p  = _effectivePrice(card);
+    const price = _p != null ? `$${_p.toFixed(2)}` : '—';
+    const arrow = _priceArrow(card.price_direction);
     const imgSrc  = card.image_small || card.image;
     const imgHtml = imgSrc
       ? `<img src="${_esc(imgSrc)}" alt="${_esc(card.name)}" loading="lazy">`
@@ -715,6 +762,9 @@ function _renderMC(cards) {
     const foilBadge = card.is_foil
       ? `<span class="badge" style="font-size:.55rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦</span>`
       : '';
+    const priceHtml = price !== '—'
+      ? `<span class="cs-price-link" data-sid="${_esc(card.scryfall_id)}" data-name="${_esc(card.name)}" data-foil="${card.is_foil ? '1' : ''}" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" title="View price history">${price}${arrow}</span>`
+      : '—';
     return `<div class="cs-tile mc-tile" data-inv="${card.inv_id}" tabindex="0" role="button" aria-label="${_esc(card.name)}">
       <div class="cs-img-wrap">
         ${imgHtml}${foilOverlay}
@@ -725,7 +775,7 @@ function _renderMC(cards) {
       </div>
       <div class="cs-info">
         <div class="cs-name" title="${_esc(card.name)}">${_esc(card.name)}</div>
-        <div class="cs-meta">${_esc(card.set_code)}${price !== '—' ? ' · ' + price : ''}</div>
+        <div class="cs-meta">${_esc(card.set_code)}${price !== '—' ? ' · ' + priceHtml : ''}</div>
         <div class="cs-meta" style="color:var(--bs-primary);font-style:italic;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${_esc(card.location)}</div>
       </div>
     </div>`;
@@ -768,6 +818,12 @@ document.getElementById('mcLocationFilter').addEventListener('change', _refilter
 
 /* Click / keyboard → shared detail dialog */
 document.getElementById('mcGrid').addEventListener('click', function (e) {
+  const priceLink = e.target.closest('.cs-price-link');
+  if (priceLink) {
+    e.stopPropagation();
+    _showPriceHistory(priceLink.dataset.sid, priceLink.dataset.name, e, !!priceLink.dataset.foil);
+    return;
+  }
   const tile = e.target.closest('.mc-tile');
   if (tile) _openACD(_mcById[tile.dataset.inv]);
 });
@@ -829,9 +885,9 @@ function _renderAC(cards) {
   }
   empty.style.display = 'none';
   grid.innerHTML = cards.map(card => {
-    const price = (card.is_foil && card.usd_foil != null)
-      ? `$${card.usd_foil.toFixed(2)}`
-      : (card.usd != null ? `$${card.usd.toFixed(2)}` : '—');
+    const _p  = _effectivePrice(card);
+    const price = _p != null ? `$${_p.toFixed(2)}` : '—';
+    const arrow = _priceArrow(card.price_direction);
     const imgSrc = card.image_small || card.image;
     const imgHtml = imgSrc
       ? `<img src="${_esc(imgSrc)}" alt="${_esc(card.name)}" loading="lazy">`
@@ -842,6 +898,9 @@ function _renderAC(cards) {
     const foilBadge = card.is_foil
       ? `<span class="badge" style="font-size:.55rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦</span>`
       : '';
+    const priceHtml = price !== '—'
+      ? `<span class="cs-price-link" data-sid="${_esc(card.scryfall_id)}" data-name="${_esc(card.name)}" data-foil="${card.is_foil ? '1' : ''}" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" title="View price history">${price}${arrow}</span>`
+      : '—';
     return `<div class="cs-tile ac-tile" data-inv="${card.inv_id}" tabindex="0" role="button" aria-label="${_esc(card.name)}">
       <div class="cs-img-wrap">
         ${imgHtml}${foilOverlay}
@@ -852,7 +911,7 @@ function _renderAC(cards) {
       </div>
       <div class="cs-info">
         <div class="cs-name" title="${_esc(card.name)}">${_esc(card.name)}</div>
-        <div class="cs-meta">${_esc(card.set_code)}${price !== '—' ? ' · ' + price : ''}</div>
+        <div class="cs-meta">${_esc(card.set_code)}${price !== '—' ? ' · ' + priceHtml : ''}</div>
         <div class="cs-meta" style="color:var(--bs-primary);font-style:italic;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${_esc(card.location)}</div>
       </div>
     </div>`;
@@ -877,6 +936,12 @@ document.getElementById('allAvailable').addEventListener('change', _refilterAC);
 
 /* Event delegation: click + keyboard on grid */
 document.getElementById('allCardsGrid').addEventListener('click', function (e) {
+  const priceLink = e.target.closest('.cs-price-link');
+  if (priceLink) {
+    e.stopPropagation();
+    _showPriceHistory(priceLink.dataset.sid, priceLink.dataset.name, e, !!priceLink.dataset.foil);
+    return;
+  }
   const tile = e.target.closest('.ac-tile');
   if (tile) _openACD(_acById[tile.dataset.inv]);
 });
@@ -1062,8 +1127,8 @@ async function _loadValueView() {
     const priced   = [];
     const unpriced = [];
     all.forEach(c => {
-      const p = (c.is_foil && c.usd_foil != null) ? c.usd_foil
-              : (c.usd != null ? c.usd : null);
+      if (c.is_proxy) return;   // proxies carry no monetary value
+      const p = _effectivePrice(c);
       if (p != null) priced.push({ ...c, _price: p });
       else           unpriced.push({ ...c, _price: null });
     });
@@ -1098,27 +1163,32 @@ function _renderValue(cards) {
     const p        = card._price;
     const priceStr = p != null ? `$${p.toFixed(2)}` : '—';
     const totalVal = p != null ? p * card.quantity : null;
-    const totalStr = totalVal != null && card.quantity > 1 ? `$${totalVal.toFixed(2)}` : '';
+    const totalStr = totalVal != null && card.quantity > 1 ? `$${totalVal.toFixed(2)} total` : '';
     const imgSrc   = card.image_small || card.image;
-    const foilBadge = card.is_foil
-      ? `<span class="badge ms-1" style="font-size:.55rem;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff">✦</span>`
-      : '';
     if (p != null) rank++;
     const rankStr = p != null ? `#${rank}` : '';
 
-    return `<div class="val-row" data-inv="${card.inv_id}" role="button" tabindex="0" aria-label="${_esc(card.name)}">
-      <span class="val-rank text-muted">${rankStr}</span>
-      ${imgSrc
-        ? `<img class="val-thumb" src="${_esc(imgSrc)}" alt="${_esc(card.name)}" loading="lazy">`
-        : `<div class="val-thumb-ph"><i class="bi bi-card-image"></i></div>`}
-      <div style="flex:1;min-width:0">
-        <div class="val-name">${_esc(card.name)}${foilBadge}</div>
-        <div class="val-sub">${_esc(card.set_code)} — ${_esc(card.location)}</div>
+    const foilShimmer = card.is_foil
+      ? `<div style="position:absolute;inset:0;border-radius:10px 10px 0 0;background:linear-gradient(135deg,rgba(255,215,0,.0) 0%,rgba(255,215,0,.18) 30%,rgba(255,255,255,.12) 50%,rgba(180,0,255,.12) 70%,rgba(0,180,255,.0) 100%);pointer-events:none"></div>`
+      : '';
+    const foilBadge = card.is_foil
+      ? `<span style="font-size:.55rem;padding:.1rem .3rem;border-radius:3px;background:linear-gradient(135deg,#f59e0b,#a855f7);color:#fff;font-weight:700">✦</span>`
+      : '';
+
+    return `<div class="val-card" data-inv="${card.inv_id}" role="button" tabindex="0" aria-label="${_esc(card.name)}">
+      <div class="val-card-img-wrap">
+        ${imgSrc
+          ? `<img src="${_esc(imgSrc)}" alt="${_esc(card.name)}" loading="lazy">`
+          : `<div class="val-card-img-ph"><i class="bi bi-card-image"></i></div>`}
+        ${foilShimmer}
+        ${rankStr ? `<span class="val-card-rank">${rankStr}</span>` : ''}
+        ${card.quantity > 1 ? `<span class="val-card-qty">×${card.quantity}</span>` : ''}
       </div>
-      <span class="val-qty">×${card.quantity}</span>
-      <div style="text-align:right;flex-shrink:0">
-        <div class="val-price" style="${p == null ? 'color:var(--bs-secondary-color);font-weight:400' : ''}">${priceStr}</div>
-        <div class="val-total">${totalStr ? totalStr + ' total' : ''}</div>
+      <div class="val-card-info">
+        <div class="val-card-price" style="${p == null ? 'color:var(--bs-secondary-color);font-size:.85rem;font-weight:500' : ''}">${priceStr}</div>
+        ${totalStr ? `<div class="val-card-total">${totalStr}</div>` : ''}
+        <div class="val-card-name">${_esc(card.name)} ${foilBadge}</div>
+        <div class="val-card-sub">${_esc(card.set_code)} — ${_esc(card.location)}</div>
       </div>
     </div>`;
   }).join('');
@@ -1135,22 +1205,22 @@ function _refilterValue() {
 }
 document.getElementById('valueSearch').addEventListener('input', _refilterValue);
 
-/* Click on a value row opens the shared detail dialog */
+/* Click on a value card opens the shared detail dialog */
 document.getElementById('valueList').addEventListener('click', function (e) {
-  const row = e.target.closest('.val-row');
-  if (!row) return;
-  const invId = parseInt(row.dataset.inv);
-  const card  = _valData && _valData.find(c => c.inv_id === invId);
-  if (card) _openACD(card);
+  const card = e.target.closest('.val-card');
+  if (!card) return;
+  const invId = parseInt(card.dataset.inv);
+  const data  = _valData && _valData.find(c => c.inv_id === invId);
+  if (data) _openACD(data);
 });
 document.getElementById('valueList').addEventListener('keydown', function (e) {
   if (e.key !== 'Enter' && e.key !== ' ') return;
-  const row = e.target.closest('.val-row');
-  if (!row) return;
+  const card = e.target.closest('.val-card');
+  if (!card) return;
   e.preventDefault();
-  const invId = parseInt(row.dataset.inv);
-  const card  = _valData && _valData.find(c => c.inv_id === invId);
-  if (card) _openACD(card);
+  const invId = parseInt(card.dataset.inv);
+  const data  = _valData && _valData.find(c => c.inv_id === invId);
+  if (data) _openACD(data);
 });
 
 {% if source == 'value' %}

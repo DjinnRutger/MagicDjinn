@@ -1,0 +1,197 @@
+{# ── Price History Modal ────────────────────────────────────────────────────
+   Reusable Chart.js line-graph popup.
+   Requires: Chart.js loaded (included by parent template via {% block head %}).
+   Opens via window.openPriceHistoryModal(scryfallId, cardName).
+   API endpoint: /api/cards/<scryfall_id>/price-history
+──────────────────────────────────────────────────────────────────────────── #}
+
+<dialog id="priceHistoryModal"
+  style="max-width:min(640px,95vw);width:100%;border:none;border-radius:14px;
+         padding:0;background:var(--bs-body-bg);color:var(--bs-body-color);
+         box-shadow:0 24px 80px rgba(0,0,0,.55)">
+  <div style="padding:1.5rem">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <div>
+        <h5 id="phm-title" class="mb-0 fw-bold"></h5>
+        <div id="phm-subtitle" class="text-muted" style="font-size:.8rem">Price history (90 days)</div>
+      </div>
+      <button id="phm-close"
+        style="border:none;background:none;font-size:1.5rem;line-height:1;
+               padding:.15rem .45rem;cursor:pointer;color:var(--bs-secondary-color);
+               border-radius:6px" title="Close">×</button>
+    </div>
+
+    <div id="phm-loading" class="text-center py-4 text-muted" style="display:none">
+      <span class="spinner-border spinner-border-sm me-1"></span> Loading price data…
+    </div>
+
+    <div id="phm-no-data" class="text-center py-4 text-muted" style="display:none">
+      <i class="bi bi-graph-up" style="font-size:2rem;opacity:.2"></i>
+      <p class="mt-2 mb-0" style="font-size:.88rem">No price history yet — run a refresh to start tracking.</p>
+    </div>
+
+    <div id="phm-chart-wrap" style="display:none;position:relative;height:260px">
+      <canvas id="phm-chart"></canvas>
+    </div>
+
+    <div id="phm-legend" class="d-flex gap-3 mt-3 justify-content-center" style="font-size:.78rem;display:none!important">
+      <span><span style="display:inline-block;width:12px;height:3px;background:#16a34a;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Market (USD)</span>
+      <span><span style="display:inline-block;width:12px;height:3px;background:#a855f7;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Foil (USD)</span>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  var _phmDlg   = document.getElementById('priceHistoryModal');
+  var _phmChart = null;
+
+  function _phmClose() { _phmDlg.close(); }
+
+  document.getElementById('phm-close').addEventListener('click', _phmClose);
+  _phmDlg.addEventListener('click', function (e) { if (e.target === _phmDlg) _phmClose(); });
+
+  window.openPriceHistoryModal = async function (scryfallId, cardName, isFoil) {
+    if (!scryfallId) return;
+
+    // Reset state
+    document.getElementById('phm-title').textContent    = cardName || 'Price History';
+    document.getElementById('phm-subtitle').textContent = isFoil ? 'Foil price history (90 days)' : 'Price history (90 days)';
+    document.getElementById('phm-loading').style.display    = '';
+    document.getElementById('phm-no-data').style.display    = 'none';
+    document.getElementById('phm-chart-wrap').style.display = 'none';
+    document.getElementById('phm-legend').style.display     = 'none';
+
+    _phmDlg.showModal();
+
+    try {
+      var res  = await fetch('/api/cards/' + encodeURIComponent(scryfallId) + '/price-history?days=90');
+      var data = await res.json();
+      document.getElementById('phm-loading').style.display = 'none';
+
+      if (!data || !data.length) {
+        document.getElementById('phm-no-data').style.display = '';
+        return;
+      }
+
+      var labels   = data.map(function (r) { return r.date; });
+      var usdVals  = data.map(function (r) { return r.usd; });
+      var foilVals = data.map(function (r) { return r.usd_foil; });
+
+      var hasFoil = foilVals.some(function (v) { return v !== null; });
+
+      document.getElementById('phm-chart-wrap').style.display = '';
+      document.getElementById('phm-legend').style.display     = '';
+
+      // Destroy previous chart if any
+      if (_phmChart) { _phmChart.destroy(); _phmChart = null; }
+
+      var ctx = document.getElementById('phm-chart').getContext('2d');
+
+      // When viewing a foil card: foil line is primary (filled, solid, thicker),
+      // non-foil is secondary (no fill, dashed, thinner). Reverse when non-foil.
+      var datasets;
+      if (isFoil && hasFoil) {
+        datasets = [
+          {
+            label:           'Foil USD',
+            data:            foilVals,
+            borderColor:     '#a855f7',
+            backgroundColor: 'rgba(168,85,247,.12)',
+            borderWidth:     2.5,
+            tension:         0.3,
+            fill:            true,
+            pointRadius:     3,
+            pointHoverRadius:5,
+            spanGaps:        true,
+            order:           1,
+          },
+          {
+            label:           'Market USD',
+            data:            usdVals,
+            borderColor:     '#16a34a',
+            backgroundColor: 'transparent',
+            borderWidth:     1.5,
+            borderDash:      [4, 3],
+            tension:         0.3,
+            fill:            false,
+            pointRadius:     2,
+            pointHoverRadius:4,
+            spanGaps:        true,
+            order:           2,
+          },
+        ];
+      } else {
+        datasets = [
+          {
+            label:           'Market USD',
+            data:            usdVals,
+            borderColor:     '#16a34a',
+            backgroundColor: 'rgba(22,163,74,.1)',
+            borderWidth:     2.5,
+            tension:         0.3,
+            fill:            true,
+            pointRadius:     3,
+            pointHoverRadius:5,
+            spanGaps:        true,
+            order:           1,
+          },
+        ];
+        if (hasFoil) {
+          datasets.push({
+            label:           'Foil USD',
+            data:            foilVals,
+            borderColor:     '#a855f7',
+            backgroundColor: 'transparent',
+            borderWidth:     1.5,
+            borderDash:      [4, 3],
+            tension:         0.3,
+            fill:            false,
+            pointRadius:     2,
+            pointHoverRadius:4,
+            spanGaps:        true,
+            order:           2,
+          });
+        }
+      }
+
+      _phmChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: datasets },
+        options: {
+          responsive:          true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'bottom', labels: { boxHeight: 3, padding: 12, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: function (ctx) {
+                  return ctx.dataset.label + ': ' + (ctx.parsed.y != null ? '$' + ctx.parsed.y.toFixed(2) : '—');
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { maxTicksLimit: 7, maxRotation: 0, font: { size: 10 } },
+              grid:  { display: false },
+            },
+            y: {
+              ticks: {
+                font: { size: 10 },
+                callback: function (v) { return '$' + v.toFixed(2); },
+              },
+              grid: { color: 'rgba(128,128,128,.1)' },
+            },
+          },
+        },
+      });
+
+    } catch (err) {
+      document.getElementById('phm-loading').style.display = 'none';
+      document.getElementById('phm-no-data').style.display = '';
+    }
+  };
+
+})();
+</script>

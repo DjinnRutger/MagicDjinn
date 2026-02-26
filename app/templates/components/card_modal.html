@@ -29,7 +29,15 @@
       <div class="card-modal-price-rows mt-2">
         <div class="card-modal-price-row">
           <span class="card-modal-price-lbl">Market</span>
-          <strong id="modal-price-usd" class="card-modal-price-val">—</strong>
+          <span class="d-flex align-items-center gap-1">
+            <strong id="modal-price-usd" class="card-modal-price-val">—</strong>
+            <span id="modal-price-arrow" style="font-size:.75em;line-height:1"></span>
+            <button id="modal-price-chart-btn" type="button"
+              title="View price history"
+              style="border:none;background:none;padding:0 2px;cursor:pointer;color:var(--bs-secondary-color);font-size:.78rem;line-height:1;opacity:.7">
+              <i class="bi bi-graph-up"></i>
+            </button>
+          </span>
         </div>
         <div class="card-modal-price-row">
           <span class="card-modal-price-lbl">Foil</span>
@@ -260,7 +268,11 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
         _selectedPrintingId = sid || null;
         _originalPrintingId = sid || null;
         document.getElementById('modal-edition-row').style.display = 'none';
-        if (sid) _loadAllPrintings(sid);
+        _clearPriceArrow();
+        if (sid) {
+          _loadAllPrintings(sid);
+          _loadPriceArrow(sid);
+        }
         break;
       }
     }
@@ -337,6 +349,9 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
       });
       if (set) setLabel.textContent = set.set_code + ' — ' + set.set_name;
     }
+    /* Update price direction arrow for the newly selected printing */
+    _clearPriceArrow();
+    _loadPriceArrow(printing.scryfall_id);
   }
 
   /* Edition change → repopulate variants → preview first */
@@ -434,6 +449,51 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-box-arrow-left me-1"></i>Return to Box';
     });
+  });
+
+  /* ── Price direction arrow ───────────────────────────────────────────────── */
+  function _isFoilChecked() {
+    var cb = document.getElementById('modal-is-foil');
+    return !!(cb && cb.checked);
+  }
+
+  function _clearPriceArrow() {
+    var el = document.getElementById('modal-price-arrow');
+    if (el) el.innerHTML = '';
+  }
+
+  function _loadPriceArrow(sid) {
+    if (!sid) return;
+    var isFoil = _isFoilChecked();
+    fetch('/api/cards/' + encodeURIComponent(sid) + '/price-history?days=90')
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) {
+        if (!data || data.length < 2) return;
+        var field = isFoil ? 'usd_foil' : 'usd';
+        var newer = data[data.length - 1][field];
+        var older = data[data.length - 2][field];
+        if (newer == null || older == null) return;
+        var el = document.getElementById('modal-price-arrow');
+        if (!el) return;
+        var label = isFoil ? 'Foil price up since last refresh' : 'Price up since last refresh';
+        var labelDown = isFoil ? 'Foil price down since last refresh' : 'Price down since last refresh';
+        if (newer > older) {
+          el.innerHTML = '<span style="color:#16a34a" title="' + label + '">↑</span>';
+        } else if (newer < older) {
+          el.innerHTML = '<span style="color:#dc2626" title="' + labelDown + '">↓</span>';
+        }
+      })
+      .catch(function () { /* silently skip — arrows are informational */ });
+  }
+
+  /* ── Chart button → open price history modal ─────────────────────────────── */
+  document.getElementById('modal-price-chart-btn').addEventListener('click', function () {
+    var sid    = dlg.dataset.scryfallId || '';
+    var name   = (document.getElementById('modal-card-name') || {}).textContent || '';
+    var isFoil = _isFoilChecked();
+    if (sid && typeof openPriceHistoryModal === 'function') {
+      openPriceHistoryModal(sid, name, isFoil);
+    }
   });
 
   /* Minimal toast */
