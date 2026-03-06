@@ -13,9 +13,22 @@
     <div class="card-modal-img-col">
 
       <div class="card-modal-img-wrap" id="modal-img-wrap">
-        <img id="modal-card-image" src="" alt="" class="card-modal-img">
-        <div class="mtg-foil-shimmer" id="modal-foil-shimmer" style="display:none"></div>
+        <div class="card-modal-flip-inner" id="modal-flip-inner">
+          <div class="card-modal-flip-front">
+            <img id="modal-card-image" src="" alt="" class="card-modal-img">
+            <div class="mtg-foil-shimmer" id="modal-foil-shimmer" style="display:none"></div>
+          </div>
+          <div class="card-modal-flip-back">
+            <img id="modal-card-image-back" src="" alt="" class="card-modal-img">
+          </div>
+        </div>
       </div>
+      <button type="button" id="modal-flip-btn"
+              class="btn btn-sm btn-outline-secondary w-100 mt-2"
+              style="display:none;font-size:.8rem"
+              onclick="window._cardModalFlip()">
+        <i class="bi bi-arrow-repeat me-1"></i>Flip Card
+      </button>
 
       {# Edition + variant selects — hidden until printings load #}
       <div id="modal-edition-row" style="display:none" class="mt-2">
@@ -193,7 +206,22 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
   border-radius: 10px; overflow: hidden; position: relative;
   aspect-ratio: 63/88; background: var(--bs-tertiary-bg);
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  perspective: 900px;
 }
+.card-modal-flip-inner {
+  width: 100%; height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform .55s cubic-bezier(.4,0,.2,1);
+}
+.card-modal-flip-inner.flipped { transform: rotateY(180deg); }
+.card-modal-flip-front,
+.card-modal-flip-back {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.card-modal-flip-back { transform: rotateY(180deg); }
 .card-modal-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* Price rows */
@@ -495,6 +523,54 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
       openPriceHistoryModal(sid, name, isFoil);
     }
   });
+
+  /* ── Double-faced card flip ──────────────────────────────────────────────── */
+  var _flipState    = false;   // false = front, true = back
+  var _frontData    = {};      // { name, type_line, oracle_text, mana_cost }
+  var _backData     = {};
+
+  /* Called by pages when opening the modal — reset flip state */
+  window._cardModalResetFlip = function (card) {
+    _flipState = false;
+    document.getElementById('modal-flip-inner').classList.remove('flipped');
+
+    var hasBack = !!(card && card.image_back);
+    document.getElementById('modal-flip-btn').style.display = hasBack ? '' : 'none';
+
+    if (hasBack) {
+      document.getElementById('modal-card-image-back').src = card.image_back;
+      _frontData = {
+        name:        card.name         || '',
+        type_line:   card.type_line    || '',
+        oracle_text: card.oracle_text  || '',
+        mana_cost:   card.mana_cost    || '',
+      };
+      _backData = {
+        name:        card.back_name        || card.name || '',
+        type_line:   card.back_type_line   || '',
+        oracle_text: card.back_oracle_text || '',
+        mana_cost:   card.back_mana_cost   || '',
+      };
+    }
+  };
+
+  window._cardModalFlip = function () {
+    _flipState = !_flipState;
+    document.getElementById('modal-flip-inner').classList.toggle('flipped', _flipState);
+    var face = _flipState ? _backData : _frontData;
+    document.getElementById('modal-card-name').textContent  = face.name;
+    document.getElementById('modal-type-line').textContent  = face.type_line;
+    document.getElementById('modal-oracle-text').innerHTML  =
+      typeof renderMana === 'function'
+        ? renderMana(face.oracle_text)
+        : (face.oracle_text || '').replace(/\n/g, '<br>');
+    document.getElementById('modal-mana-cost').innerHTML =
+      typeof renderMana === 'function' ? renderMana(face.mana_cost) : (face.mana_cost || '');
+    var btn = document.getElementById('modal-flip-btn');
+    btn.innerHTML = _flipState
+      ? '<i class="bi bi-arrow-repeat me-1"></i>Show Front'
+      : '<i class="bi bi-arrow-repeat me-1"></i>Flip Card';
+  };
 
   /* Minimal toast */
   function _cmToast(msg, type) {

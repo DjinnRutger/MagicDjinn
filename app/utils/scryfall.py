@@ -69,6 +69,39 @@ def _oracle_text(data: dict) -> str:
     return text or ""
 
 
+# Layouts that have a distinct back face with its own image/text
+_DFC_LAYOUTS = {"transform", "modal_dfc", "reversible_card", "double_faced_token"}
+
+
+def _back_face_data(data: dict) -> dict:
+    """
+    Extract back-face fields for double-faced cards.
+    Returns a dict with image_back / back_name / back_type_line /
+    back_oracle_text / back_mana_cost, all None for single-faced cards.
+    """
+    faces = data.get("card_faces")
+    layout = data.get("layout", "")
+    if not faces or len(faces) < 2 or layout not in _DFC_LAYOUTS:
+        return {
+            "layout":           layout or None,
+            "image_back":       None,
+            "back_name":        None,
+            "back_type_line":   None,
+            "back_oracle_text": None,
+            "back_mana_cost":   None,
+        }
+    back = faces[1]
+    back_uris = back.get("image_uris") or {}
+    return {
+        "layout":           layout,
+        "image_back":       back_uris.get("normal"),
+        "back_name":        back.get("name"),
+        "back_type_line":   back.get("type_line"),
+        "back_oracle_text": back.get("oracle_text"),
+        "back_mana_cost":   back.get("mana_cost"),
+    }
+
+
 def normalize_card(data: dict) -> dict:
     """
     Convert a raw Scryfall card object into a flat dict matching our Card model.
@@ -80,7 +113,7 @@ def normalize_card(data: dict) -> dict:
     color_identity = data.get("color_identity", [])
     legalities = data.get("legalities", {})
 
-    return {
+    result = {
         "scryfall_id":      data["id"],
         "oracle_id":        data.get("oracle_id"),
         "name":             data["name"],
@@ -107,6 +140,8 @@ def normalize_card(data: dict) -> dict:
         "frame_effects":    data.get("frame_effects", []),
         "finishes":         data.get("finishes", ["nonfoil"]),
     }
+    result.update(_back_face_data(data))
+    return result
 
 
 # ── Public API functions ──────────────────────────────────────────────────────

@@ -23,6 +23,14 @@ class Card(db.Model):
     image_small      = db.Column(db.String(400))
     image_art_crop   = db.Column(db.String(400))
 
+    # Double-faced card back face (nullable — only set for DFCs)
+    layout           = db.Column(db.String(40))   # e.g. 'transform', 'modal_dfc', 'flip'
+    image_back       = db.Column(db.String(400))  # back face normal image URL
+    back_name        = db.Column(db.String(200))
+    back_type_line   = db.Column(db.String(200))
+    back_oracle_text = db.Column(db.Text)
+    back_mana_cost   = db.Column(db.String(100))
+
     # Prices (USD, updated periodically from Scryfall)
     usd              = db.Column(db.Float, nullable=True)
     usd_foil         = db.Column(db.Float, nullable=True)

@@ -513,7 +513,7 @@ dialog#feedCardDlg::backdrop { background: rgba(0,0,0,.55); }
     </div>
     <div id="feedLoadMore" class="p-3 text-center" style="display:none">
       <button class="btn btn-sm btn-outline-secondary" id="feedLoadMoreBtn">
-        <i class="bi bi-arrow-down me-1"></i>Load more
+        <i class="bi bi-clock-history me-1"></i>More posts
       </button>
     </div>
   </div>
@@ -1129,7 +1129,8 @@ function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;
     if (reset) { page = 1; feedList.innerHTML = ''; feedLoadMore.style.display = 'none'; }
     feedStatus.textContent = 'Loading\u2026';
 
-    fetch('/api/feed?page='+page)
+    var _feedUrl = '/api/feed?page=' + page + (page === 1 ? '&days=7' : '');
+    fetch(_feedUrl)
       .then(function(r){ return r.json(); })
       .then(function(data){
         feedSkel.style.display = 'none';

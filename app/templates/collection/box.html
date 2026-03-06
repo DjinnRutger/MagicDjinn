@@ -54,6 +54,32 @@
 }
 .mtg-card-meta { font-size: .63rem; color: var(--bs-secondary-color); margin-top: 2px; }
 
+/* ── Bulk select mode ─────────────────────────────────────────────────────── */
+.bulk-check-overlay {
+  display: none;
+  position: absolute; inset: 0; border-radius: 9px;
+  background: rgba(37,99,235,.38);
+  align-items: center; justify-content: center;
+  font-size: 2.5rem; font-weight: 900;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.55);
+  pointer-events: none; z-index: 8;
+}
+.bulk-check-overlay::before { content: '✓'; }
+.mtg-card-tile.bulk-selected .bulk-check-overlay { display: flex; }
+.mtg-card-tile.bulk-selected { outline: 3px solid #2563eb; outline-offset: 2px; }
+.bulk-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bs-body-bg);
+  border-top: 2px solid #2563eb;
+  padding: .6rem 1.25rem;
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  z-index: 1040;
+  box-shadow: 0 -6px 28px rgba(0,0,0,.18);
+  transform: translateY(100%);
+  transition: transform .22s ease;
+}
+.bulk-bar.active { transform: translateY(0); }
+
 /* ── Search / filter toolbar ──────────────────────────────────────────────── */
 .collection-toolbar {
   display: flex; flex-wrap: wrap; gap: .6rem;
@@ -99,6 +125,7 @@
       <i class="bi bi-x"></i>
     </a>
     {% endif %}
+    <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-search"></i></button>
   </div>
 
   <select name="sort" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
@@ -114,11 +141,26 @@
     <label for="foilFilter" class="form-check-label" style="font-size:.85rem">Foil only</label>
   </div>
 
+  {% if locations %}
+  <select name="location" class="form-select form-select-sm" style="width:auto;max-width:180px" onchange="this.form.submit()">
+    <option value="">All Locations</option>
+    {% for loc in locations %}
+    <option value="{{ loc }}" {% if location == loc %}selected{% endif %}>{{ loc }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+
+  <button type="button" id="bulkToggleBtn"
+          class="btn btn-outline-secondary btn-sm"
+          onclick="toggleBulkMode()">
+    <i class="bi bi-check2-square me-1"></i>Bulk Edit
+  </button>
+
   <div class="collection-stats">
     <strong>{{ total_qty }}</strong> card{% if total_qty != 1 %}s{% endif %}
     &nbsp;·&nbsp;
     <strong>${{ "%.2f"|format(total_value) }}</strong> est. value
-    {% if search %}
+    {% if search or foil_only or location %}
     &nbsp;·&nbsp;<em class="text-muted">filtered</em>
     {% endif %}
   </div>
@@ -149,6 +191,11 @@
     'purchase_price':     inv.purchase_price_usd,
     'notes':              inv.notes or '',
     'physical_location':  inv.physical_location or '',
+    'image_back':         inv.card.image_back or '',
+    'back_name':          inv.card.back_name or '',
+    'back_type_line':     inv.card.back_type_line or '',
+    'back_oracle_text':   inv.card.back_oracle_text or '',
+    'back_mana_cost':     inv.card.back_mana_cost or '',
   } %}
   <div class="mtg-card-tile"
        tabindex="0"
@@ -167,6 +214,7 @@
       </div>
       {% endif %}
       {% if inv.is_foil %}<div class="mtg-foil-shimmer"></div>{% endif %}
+      <div class="bulk-check-overlay"></div>
       <div class="mtg-card-badges">
         <span class="badge bg-dark bg-opacity-75 text-white" style="font-size:.6rem">{{ inv.quantity }}×</span>
         {% if inv.is_foil %}
@@ -215,6 +263,70 @@
   </p>
 </div>
 {% endif %}
+
+{# ── Bulk action bar ────────────────────────────────────────────────────────── #}
+<div id="bulkBar" class="bulk-bar">
+  <span class="fw-bold me-1" id="bulkCount" style="font-size:.9rem">0 selected</span>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkSelectAll()">All</button>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkClearAll()">None</button>
+  <div class="vr mx-1"></div>
+  <button type="button" id="bulkLocBtn" class="btn btn-outline-primary btn-sm" disabled
+          onclick="document.getElementById('bulkLocationDlg').showModal()">
+    <i class="bi bi-geo-alt me-1"></i>Set Location
+  </button>
+  <button type="button" id="bulkDeckBtn" class="btn btn-outline-primary btn-sm" disabled
+          {% if not my_decks %}title="You have no decks yet"{% endif %}
+          onclick="{% if my_decks %}document.getElementById('bulkDeckDlg').showModal(){% endif %}">
+    <i class="bi bi-layers me-1"></i>Move to Deck
+  </button>
+  <button type="button" id="bulkDelBtn" class="btn btn-outline-danger btn-sm ms-auto" disabled
+          onclick="bulkDelete()">
+    <i class="bi bi-trash3 me-1"></i>Delete
+  </button>
+</div>
+
+{# ── Bulk: Set Location dialog ───────────────────────────────────────────── #}
+<dialog id="bulkLocationDlg"
+        style="border:none;border-radius:12px;padding:1.25rem 1.4rem;width:min(380px,96vw);
+               box-shadow:0 20px 60px rgba(0,0,0,.35);
+               background:var(--bs-body-bg);color:var(--bs-body-color)">
+  <h6 class="fw-bold mb-3"><i class="bi bi-geo-alt me-1 text-primary"></i>Set Physical Location</h6>
+  <input type="text" id="bulkLocationInput" class="form-control mb-1"
+         placeholder="e.g. Binder A, Box 3, Top Shelf…" maxlength="200">
+  <div class="form-text mb-3">Leave blank to clear the location.</div>
+  <div class="d-flex gap-2 justify-content-end">
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            onclick="document.getElementById('bulkLocationDlg').close()">Cancel</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="applyBulkLocation()">
+      <i class="bi bi-check-lg me-1"></i>Apply
+    </button>
+  </div>
+</dialog>
+
+{# ── Bulk: Move to Deck dialog ───────────────────────────────────────────── #}
+<dialog id="bulkDeckDlg"
+        style="border:none;border-radius:12px;padding:1.25rem 1.4rem;width:min(380px,96vw);
+               box-shadow:0 20px 60px rgba(0,0,0,.35);
+               background:var(--bs-body-bg);color:var(--bs-body-color)">
+  <h6 class="fw-bold mb-3"><i class="bi bi-layers me-1 text-primary"></i>Move to Deck</h6>
+  {% if my_decks %}
+  <select id="bulkDeckSelect" class="form-select mb-3">
+    {% for deck in my_decks %}
+    <option value="{{ deck.id }}">{{ deck.name }} ({{ deck.format }})</option>
+    {% endfor %}
+  </select>
+  {% else %}
+  <p class="text-muted small mb-3">You have no decks yet. Create one first.</p>
+  {% endif %}
+  <div class="d-flex gap-2 justify-content-end">
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            onclick="document.getElementById('bulkDeckDlg').close()">Cancel</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="applyBulkDeck()"
+            {% if not my_decks %}disabled{% endif %}>
+      <i class="bi bi-check-lg me-1"></i>Move
+    </button>
+  </div>
+</dialog>
 
 {# ── Card modal ── #}
 {% include "components/card_modal.html" %}
@@ -293,6 +405,7 @@
     document.getElementById("modal-notes").value             = card.notes || "";
 
     hideAlert();
+    if (window._cardModalResetFlip) window._cardModalResetFlip(card);
     dlg.showModal();
   }
 
@@ -306,7 +419,10 @@
 
   // ── Click any card tile ────────────────────────────────────────────────────
   document.querySelectorAll(".mtg-card-tile").forEach(function(tile) {
-    tile.addEventListener("click", function() { openCardModal(tile); });
+    tile.addEventListener("click", function() {
+      if (window._bulkMode) { window._bulkTileClick(tile); return; }
+      openCardModal(tile);
+    });
     tile.addEventListener("keydown", function(e) {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCardModal(tile); }
     });
@@ -390,6 +506,123 @@
     .catch(function() { alert("Network error."); btn.disabled = false; });
   });
 
+})();
+
+// ── Bulk select mode ──────────────────────────────────────────────────────────
+(function () {
+  var CSRF     = document.querySelector('meta[name="csrf-token"]').content;
+  var bulkBar  = document.getElementById('bulkBar');
+  var selected = new Set();
+  window._bulkMode = false;
+
+  function showToast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'alert alert-' + type + ' alert-dismissible fade show position-fixed';
+    el.style.cssText = 'bottom:4.5rem;right:1.5rem;z-index:9999;min-width:240px;max-width:380px';
+    el.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    document.body.appendChild(el);
+    setTimeout(function() { el.remove(); }, 3500);
+  }
+
+  function updateBulkBar() {
+    var n = selected.size;
+    document.getElementById('bulkCount').textContent = n + ' selected';
+    ['bulkLocBtn', 'bulkDeckBtn', 'bulkDelBtn'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = (n === 0);
+    });
+  }
+
+  window._bulkTileClick = function(tile) {
+    var id = JSON.parse(tile.dataset.card).inv_id;
+    if (selected.has(id)) {
+      selected.delete(id);
+      tile.classList.remove('bulk-selected');
+    } else {
+      selected.add(id);
+      tile.classList.add('bulk-selected');
+    }
+    updateBulkBar();
+  };
+
+  window.toggleBulkMode = function() {
+    window._bulkMode = !window._bulkMode;
+    selected.clear();
+    document.querySelectorAll('.mtg-card-tile.bulk-selected').forEach(function(t) {
+      t.classList.remove('bulk-selected');
+    });
+    var btn = document.getElementById('bulkToggleBtn');
+    if (window._bulkMode) {
+      btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Cancel';
+      btn.className = 'btn btn-outline-danger btn-sm';
+      bulkBar.classList.add('active');
+    } else {
+      btn.innerHTML = '<i class="bi bi-check2-square me-1"></i>Bulk Edit';
+      btn.className = 'btn btn-outline-secondary btn-sm';
+      bulkBar.classList.remove('active');
+    }
+    updateBulkBar();
+  };
+
+  window.bulkSelectAll = function() {
+    document.querySelectorAll('.mtg-card-tile').forEach(function(tile) {
+      var id = JSON.parse(tile.dataset.card).inv_id;
+      selected.add(id);
+      tile.classList.add('bulk-selected');
+    });
+    updateBulkBar();
+  };
+
+  window.bulkClearAll = function() {
+    selected.clear();
+    document.querySelectorAll('.mtg-card-tile.bulk-selected').forEach(function(t) {
+      t.classList.remove('bulk-selected');
+    });
+    updateBulkBar();
+  };
+
+  async function bulkPost(action, extra) {
+    var body = Object.assign({ action: action, inv_ids: Array.from(selected) }, extra || {});
+    var res  = await fetch('/box/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    return { ok: res.ok, data: data };
+  }
+
+  window.applyBulkLocation = async function() {
+    var loc = document.getElementById('bulkLocationInput').value.trim();
+    document.getElementById('bulkLocationDlg').close();
+    var r = await bulkPost('set_location', { location: loc });
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
+
+  window.applyBulkDeck = async function() {
+    var sel = document.getElementById('bulkDeckSelect');
+    var deckId = sel ? parseInt(sel.value) : null;
+    if (!deckId) return;
+    document.getElementById('bulkDeckDlg').close();
+    var r = await bulkPost('move_to_deck', { deck_id: deckId });
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
+
+  window.bulkDelete = async function() {
+    if (!selected.size) return;
+    if (!confirm('Permanently delete ' + selected.size + ' card(s) from your collection? This cannot be undone.')) return;
+    var r = await bulkPost('delete');
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
 })();
 
 // ── Price link clicks (event delegation on the card grid) ────────────────────

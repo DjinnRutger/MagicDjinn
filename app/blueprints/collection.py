@@ -38,9 +38,10 @@ def box():
     from app.models.inventory import Inventory
     from app.models.card import Card
 
-    search = request.args.get("q", "").strip()
-    sort   = request.args.get("sort", "name")
+    search    = request.args.get("q", "").strip()
+    sort      = request.args.get("sort", "name")
     foil_only = request.args.get("foil", "") == "1"
+    location  = request.args.get("location", "").strip()
 
     query = (
         Inventory.query
@@ -61,6 +62,9 @@ def box():
 
     if foil_only:
         query = query.filter(Inventory.is_foil.is_(True))
+
+    if location:
+        query = query.filter(Inventory.physical_location == location)
 
     if sort == "value":
         query = query.order_by(Card.usd.desc().nulls_last())
@@ -93,6 +97,29 @@ def box():
         for inv in items
     }
 
+    # Distinct physical locations for the dropdown filter
+    locations = [
+        row[0] for row in
+        db.session.query(Inventory.physical_location)
+        .filter(
+            Inventory.user_id == current_user.id,
+            Inventory.current_deck_id.is_(None),
+            Inventory.physical_location.isnot(None),
+            Inventory.physical_location != "",
+        )
+        .distinct()
+        .order_by(Inventory.physical_location)
+        .all()
+    ]
+
+    from app.models.deck import Deck
+    my_decks = (
+        Deck.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Deck.name.asc())
+        .all()
+    )
+
     return render_template(
         "collection/box.html",
         items=items,
@@ -101,7 +128,10 @@ def box():
         search=search,
         sort=sort,
         foil_only=foil_only,
+        location=location,
+        locations=locations,
         price_directions=price_directions,
+        my_decks=my_decks,
         active_page="collection",
     )
 
@@ -334,3 +364,77 @@ def delete_card(inv_id):
     log_audit("card_deleted", "inventory", inv_id, f"Removed {card_name} from Box")
 
     return jsonify(success=True, message=f"{card_name} removed from your Box.")
+
+
+# ── AJAX: bulk action ─────────────────────────────────────────────────────────
+
+@collection_bp.route("/box/bulk", methods=["POST"])
+@login_required
+@permission_required("collection.edit")
+def bulk_action():
+    from app.models.inventory import Inventory
+    from app.models.deck import Deck
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify(error="No data"), 400
+
+    action  = data.get("action")
+    inv_ids = data.get("inv_ids") or []
+
+    if not inv_ids or not isinstance(inv_ids, list):
+        return jsonify(error="No cards selected"), 400
+    if not action:
+        return jsonify(error="No action specified"), 400
+
+    items = Inventory.query.filter(
+        Inventory.id.in_(inv_ids),
+        Inventory.user_id == current_user.id,
+    ).all()
+
+    if not items:
+        return jsonify(error="No matching cards found"), 404
+
+    count = len(items)
+
+    if action == "set_location":
+        loc = (str(data.get("location") or "")[:200]) or None
+        for inv in items:
+            inv.physical_location = loc
+        db.session.commit()
+        log_audit("bulk_set_location", "inventory", None,
+                  f"Set location '{loc}' on {count} card(s)")
+        return jsonify(success=True, message=f"Location updated for {count} card(s).")
+
+    elif action == "move_to_deck":
+        deck_id = data.get("deck_id")
+        if not deck_id:
+            return jsonify(error="No deck specified"), 400
+        deck = Deck.query.filter_by(id=deck_id, user_id=current_user.id).first_or_404()
+        for inv in items:
+            inv.current_deck_id = deck.id
+            inv.is_sideboard    = False
+            inv.is_commander    = False
+        db.session.commit()
+        log_audit("bulk_move_deck", "inventory", None,
+                  f"Moved {count} card(s) to deck '{deck.name}'")
+        return jsonify(success=True, message=f"Moved {count} card(s) to '{deck.name}'.")
+
+    elif action == "move_to_box":
+        for inv in items:
+            inv.current_deck_id = None
+            inv.is_sideboard    = False
+            inv.is_commander    = False
+        db.session.commit()
+        log_audit("bulk_move_box", "inventory", None,
+                  f"Moved {count} card(s) to Box")
+        return jsonify(success=True, message=f"Moved {count} card(s) to your Box.")
+
+    elif action == "delete":
+        for inv in items:
+            db.session.delete(inv)
+        db.session.commit()
+        log_audit("bulk_delete", "inventory", None, f"Deleted {count} card(s)")
+        return jsonify(success=True, message=f"Deleted {count} card(s) permanently.")
+
+    return jsonify(error="Unknown action"), 400

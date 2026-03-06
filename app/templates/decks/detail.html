@@ -83,6 +83,35 @@
 }
 .card-tile[data-hidden="1"] { display: none; }
 
+/* ── Bulk select mode ─────────────────────────────────────────────────────── */
+.card-tile.bulk-selected::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(37,99,235,.38);
+  z-index: 8; pointer-events: none;
+}
+.card-tile.bulk-selected::after {
+  content: '✓';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.5rem; font-weight: 900;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.55);
+  z-index: 9; pointer-events: none; line-height: 1;
+}
+.card-tile.bulk-selected { outline: 3px solid #2563eb; outline-offset: 2px; }
+.bulk-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bs-body-bg);
+  border-top: 2px solid #2563eb;
+  padding: .6rem 1.25rem;
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  z-index: 1040;
+  box-shadow: 0 -6px 28px rgba(0,0,0,.18);
+  transform: translateY(100%);
+  transition: transform .22s ease;
+}
+.bulk-bar.active { transform: translateY(0); }
+
 /* ── Stat cards ────────────────────────────────────────────────────────────── */
 .stat-card {
   border: 1px solid var(--bs-border-color);
@@ -258,6 +287,20 @@ dialog#importDialog::backdrop { background: rgba(0,0,0,.55); }
            value="{{ search }}"
            oninput="filterDeckCards(this.value)">
   </div>
+  <div class="form-check mb-0">
+    <input class="form-check-input" type="checkbox" id="proxyFilter"
+           onchange="filterDeckCards(document.getElementById('deckSearch').value)">
+    <label class="form-check-label" for="proxyFilter" style="font-size:.85rem">
+      Proxy only
+    </label>
+  </div>
+  {% if is_owner or can_edit %}
+  <button type="button" id="deckBulkToggleBtn"
+          class="btn btn-outline-secondary btn-sm"
+          onclick="toggleDeckBulkMode()">
+    <i class="bi bi-check2-square me-1"></i>Bulk Edit
+  </button>
+  {% endif %}
   <span class="text-muted ms-auto" style="font-size:.82rem" id="deckCardCount">
     {{ deck_cards | length }} slot{% if deck_cards | length != 1 %}s{% endif %}
     · {{ total_qty }} card{% if total_qty != 1 %}s{% endif %}
@@ -292,12 +335,18 @@ dialog#importDialog::backdrop { background: rgba(0,0,0,.55); }
     'purchase_price':    inv.purchase_price_usd,
     'notes':             inv.notes or '',
     'physical_location': inv.physical_location or '',
+    'image_back':        card.image_back or '',
+    'back_name':         card.back_name or '',
+    'back_type_line':    card.back_type_line or '',
+    'back_oracle_text':  card.back_oracle_text or '',
+    'back_mana_cost':    card.back_mana_cost or '',
   } %}
   <div class="card-tile"
        tabindex="0"
        role="button"
        aria-label="{{ card.name }}"
        data-card-name="{{ card.name | lower }}"
+       data-is-proxy="{{ '1' if inv.is_proxy else '' }}"
        data-card='{{ cd | tojson }}'>
     {% if card.image_normal or card.image_small %}
     <img src="{{ card.image_normal or card.image_small }}" alt="{{ card.name }}" loading="lazy">
@@ -470,6 +519,46 @@ dialog#importDialog::backdrop { background: rgba(0,0,0,.55); }
 </div>
 {% endif %}
 
+{# ── Bulk action bar (owner / can_edit only) ────────────────────────────────── #}
+{% if is_owner or can_edit %}
+<div id="deckBulkBar" class="bulk-bar">
+  <span class="fw-bold me-1" id="deckBulkCount" style="font-size:.9rem">0 selected</span>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deckBulkSelectAll()">All</button>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deckBulkClearAll()">None</button>
+  <div class="vr mx-1"></div>
+  <button type="button" id="deckBulkLocBtn" class="btn btn-outline-primary btn-sm" disabled
+          onclick="document.getElementById('deckBulkLocationDlg').showModal()">
+    <i class="bi bi-geo-alt me-1"></i>Set Location
+  </button>
+  <button type="button" id="deckBulkBoxBtn" class="btn btn-outline-primary btn-sm" disabled
+          onclick="deckBulkMoveToBox()">
+    <i class="bi bi-collection me-1"></i>Return to Box
+  </button>
+  <button type="button" id="deckBulkDelBtn" class="btn btn-outline-danger btn-sm ms-auto" disabled
+          onclick="deckBulkDelete()">
+    <i class="bi bi-trash3 me-1"></i>Delete
+  </button>
+</div>
+
+{# ── Bulk: Set Location dialog ───────────────────────────────────────────── #}
+<dialog id="deckBulkLocationDlg"
+        style="border:none;border-radius:12px;padding:1.25rem 1.4rem;width:min(380px,96vw);
+               box-shadow:0 20px 60px rgba(0,0,0,.35);
+               background:var(--bs-body-bg);color:var(--bs-body-color)">
+  <h6 class="fw-bold mb-3"><i class="bi bi-geo-alt me-1 text-primary"></i>Set Physical Location</h6>
+  <input type="text" id="deckBulkLocationInput" class="form-control mb-1"
+         placeholder="e.g. Binder A, Box 3, Top Shelf…" maxlength="200">
+  <div class="form-text mb-3">Leave blank to clear the location.</div>
+  <div class="d-flex gap-2 justify-content-end">
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            onclick="document.getElementById('deckBulkLocationDlg').close()">Cancel</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="deckBulkApplyLocation()">
+      <i class="bi bi-check-lg me-1"></i>Apply
+    </button>
+  </div>
+</dialog>
+{% endif %}
+
 {# ── Card detail modal (shared component) ─────────────────────────────────── #}
 {% include "components/card_modal.html" %}
 
@@ -501,20 +590,25 @@ function showToast(msg, type) {
 }
 window._pageToast = showToast;
 
-/* ── Live card search ────────────────────────────────────────────────────── */
+/* ── Live card search + proxy filter ─────────────────────────────────────── */
 function filterDeckCards(query) {
-  var q = query.trim().toLowerCase();
+  var q = (query || '').trim().toLowerCase();
+  var proxyOnly = document.getElementById('proxyFilter') && document.getElementById('proxyFilter').checked;
   var visible = 0;
   document.querySelectorAll('.card-tile').forEach(function(tile) {
     var name = tile.dataset.cardName || '';
-    var show = !q || name.includes(q);
+    var isProxy = !!tile.dataset.isProxy;
+    var show = (!q || name.includes(q)) && (!proxyOnly || isProxy);
     tile.dataset.hidden = show ? '0' : '1';
     tile.style.display  = show ? '' : 'none';
     if (show) visible++;
   });
   var countEl = document.getElementById('deckCardCount');
-  if (countEl && q) countEl.textContent = visible + ' match' + (visible !== 1 ? 'es' : '');
-  else if (countEl) countEl.textContent = '{{ deck_cards | length }} slot{% if deck_cards | length != 1 %}s{% endif %} · {{ total_qty }} card{% if total_qty != 1 %}s{% endif %}';
+  if (countEl && (q || proxyOnly)) {
+    countEl.textContent = visible + ' match' + (visible !== 1 ? 'es' : '');
+  } else if (countEl) {
+    countEl.textContent = '{{ deck_cards | length }} slot{% if deck_cards | length != 1 %}s{% endif %} · {{ total_qty }} card{% if total_qty != 1 %}s{% endif %}';
+  }
 }
 
 /* ── Card modal for deck cards ───────────────────────────────────────────── */
@@ -564,6 +658,7 @@ function openDeckCardModal(tile) {
   document.getElementById('modal-notes').value             = card.notes || '';
 
   document.getElementById('modal-alert').style.display = 'none';
+  if (window._cardModalResetFlip) window._cardModalResetFlip(card);
 
   if (CAN_EDIT) {
     if (window._showDeckModalSection) {
@@ -594,7 +689,10 @@ function openDeckCardModal(tile) {
 
 // Wire up all card tiles
 document.querySelectorAll('.card-tile').forEach(function(tile) {
-  tile.addEventListener('click', function() { openDeckCardModal(tile); });
+  tile.addEventListener('click', function() {
+    if (window._deckBulkMode) { window._deckBulkTileClick(tile); return; }
+    openDeckCardModal(tile);
+  });
   tile.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDeckCardModal(tile); }
   });
@@ -846,6 +944,114 @@ function setImportError(msg) {
     document.getElementById('importDialog').showModal();
   }, 2000);
 }
+{% endif %}
+
+{% if is_owner or can_edit %}
+/* ── Deck bulk select mode ───────────────────────────────────────────────── */
+(function () {
+  var bulkBar  = document.getElementById('deckBulkBar');
+  var selected = new Set();
+  window._deckBulkMode = false;
+
+  function updateBulkBar() {
+    var n = selected.size;
+    document.getElementById('deckBulkCount').textContent = n + ' selected';
+    ['deckBulkLocBtn', 'deckBulkBoxBtn', 'deckBulkDelBtn'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = (n === 0);
+    });
+  }
+
+  window._deckBulkTileClick = function(tile) {
+    var id = JSON.parse(tile.dataset.card).inv_id;
+    if (selected.has(id)) {
+      selected.delete(id);
+      tile.classList.remove('bulk-selected');
+    } else {
+      selected.add(id);
+      tile.classList.add('bulk-selected');
+    }
+    updateBulkBar();
+  };
+
+  window.toggleDeckBulkMode = function() {
+    window._deckBulkMode = !window._deckBulkMode;
+    selected.clear();
+    document.querySelectorAll('.card-tile.bulk-selected').forEach(function(t) {
+      t.classList.remove('bulk-selected');
+    });
+    var btn = document.getElementById('deckBulkToggleBtn');
+    if (window._deckBulkMode) {
+      btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Cancel';
+      btn.className = 'btn btn-outline-danger btn-sm';
+      bulkBar.classList.add('active');
+    } else {
+      btn.innerHTML = '<i class="bi bi-check2-square me-1"></i>Bulk Edit';
+      btn.className = 'btn btn-outline-secondary btn-sm';
+      bulkBar.classList.remove('active');
+    }
+    updateBulkBar();
+  };
+
+  window.deckBulkSelectAll = function() {
+    document.querySelectorAll('.card-tile').forEach(function(tile) {
+      if (tile.dataset.hidden === '1') return; // skip hidden (filtered)
+      var id = JSON.parse(tile.dataset.card).inv_id;
+      selected.add(id);
+      tile.classList.add('bulk-selected');
+    });
+    updateBulkBar();
+  };
+
+  window.deckBulkClearAll = function() {
+    selected.clear();
+    document.querySelectorAll('.card-tile.bulk-selected').forEach(function(t) {
+      t.classList.remove('bulk-selected');
+    });
+    updateBulkBar();
+  };
+
+  async function deckBulkPost(action, extra) {
+    var body = Object.assign({ action: action, inv_ids: Array.from(selected) }, extra || {});
+    var res  = await fetch('/box/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    return { ok: res.ok, data: data };
+  }
+
+  window.deckBulkApplyLocation = async function() {
+    var loc = document.getElementById('deckBulkLocationInput').value.trim();
+    document.getElementById('deckBulkLocationDlg').close();
+    var r = await deckBulkPost('set_location', { location: loc });
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
+
+  window.deckBulkMoveToBox = async function() {
+    if (!selected.size) return;
+    if (!confirm('Return ' + selected.size + ' card(s) to your Box?')) return;
+    var r = await deckBulkPost('move_to_box');
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
+
+  window.deckBulkDelete = async function() {
+    if (!selected.size) return;
+    if (!confirm('Permanently delete ' + selected.size + ' card(s) from your entire collection? This cannot be undone.')) return;
+    var r = await deckBulkPost('delete');
+    if (r.ok && r.data.success) {
+      showToast(r.data.message, 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else { showToast(r.data.error || 'Failed.', 'danger'); }
+  };
+})();
 {% endif %}
 </script>
 {% endblock %}

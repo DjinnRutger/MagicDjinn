@@ -71,8 +71,9 @@ def friend_box(user_id):
     if not can_view_box(current_user, friend):
         abort(403)
 
-    search = request.args.get("q", "").strip()
+    search    = request.args.get("q", "").strip()
     foil_only = request.args.get("foil", "") == "1"
+    location  = request.args.get("location", "").strip()
 
     query = (
         Inventory.query
@@ -86,8 +87,26 @@ def friend_box(user_id):
         query = query.filter(Card.name.ilike(f"%{search}%"))
     if foil_only:
         query = query.filter(Inventory.is_foil.is_(True))
+    if location:
+        query = query.filter(Inventory.physical_location == location)
 
     cards = query.order_by(Card.name.asc()).all()
+
+    # Distinct locations from friend's box for the dropdown
+    from app.extensions import db as _db
+    locations = [
+        row[0] for row in
+        _db.session.query(Inventory.physical_location)
+        .filter(
+            Inventory.user_id == friend.id,
+            Inventory.current_deck_id.is_(None),
+            Inventory.physical_location.isnot(None),
+            Inventory.physical_location != "",
+        )
+        .distinct()
+        .order_by(Inventory.physical_location)
+        .all()
+    ]
 
     # My decks for the transfer modal
     my_decks = (
@@ -104,6 +123,8 @@ def friend_box(user_id):
         my_decks=my_decks,
         search=search,
         foil_only=foil_only,
+        location=location,
+        locations=locations,
         active_page="friends",
     )
 

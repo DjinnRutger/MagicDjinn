@@ -29,3 +29,4 @@ migrations/__pycache__/
 Thumbs.db
 
 adminpassword.txt
+.claude/

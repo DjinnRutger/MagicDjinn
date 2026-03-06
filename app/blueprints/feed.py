@@ -7,7 +7,7 @@ POST /api/feed/<id>/comment            – add a comment
 DELETE /api/feed/comment/<id>          – delete own comment
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
@@ -137,13 +137,24 @@ def get_feed():
     from app.models.feed import FeedPost, FeedLike
 
     page     = max(1, int(request.args.get("page", 1)))
-    per_page = 15
+    per_page = 10
     fids     = _friend_ids()
     visible  = list(fids | {current_user.id})
 
+    # Optional 7-day cutoff — only honoured on page 1
+    cutoff = None
+    days_str = request.args.get("days")
+    if page == 1 and days_str:
+        try:
+            cutoff = datetime.utcnow() - timedelta(days=int(days_str))
+        except (ValueError, TypeError):
+            pass
+
+    base_q = FeedPost.query.filter(FeedPost.user_id.in_(visible))
+    q = base_q.filter(FeedPost.created_at >= cutoff) if cutoff else base_q
+
     posts = (
-        FeedPost.query
-        .filter(FeedPost.user_id.in_(visible))
+        q
         .order_by(FeedPost.created_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page + 1)
@@ -151,6 +162,14 @@ def get_feed():
     )
     has_more = len(posts) > per_page
     posts    = posts[:per_page]
+
+    # Even if the time window had fewer than per_page posts, flag has_more
+    # if there are older posts so the user can load them.
+    if cutoff and not has_more:
+        has_more = db.session.query(FeedPost.id).filter(
+            FeedPost.user_id.in_(visible),
+            FeedPost.created_at < cutoff,
+        ).first() is not None
 
     liked_set = {
         like.post_id
