@@ -261,10 +261,34 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
   pointer-events: none;
 }
 
+/* Horizontal card layout (split, planar, scheme, aftermath)
+   — keep the card in its native landscape orientation and size the
+     image column to the proper MTG landscape ratio so the full card is
+     visible without cropping. */
+.card-modal--horizontal .card-modal-img-col { width: min(100%, 320px); }
+.card-modal--horizontal .card-modal-img-wrap {
+  aspect-ratio: 88/63;
+}
+.card-modal--horizontal .card-modal-img {
+  object-fit: contain;
+}
+.card-modal--horizontal.card-modal--horizontal-rotated .card-modal-img-wrap {
+  overflow: hidden;
+}
+.card-modal--horizontal.card-modal--horizontal-rotated .card-modal-img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% * 63 / 88);
+  height: calc(100% * 88 / 63);
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
 /* Mobile */
 @media (max-width: 580px) {
   .card-modal-body    { flex-direction: column; padding: 2.5rem 1rem 1rem; }
   .card-modal-img-col { width: 100%; max-width: 210px; margin: 0 auto; }
+  .card-modal--horizontal .card-modal-img-col { max-width: 320px; }
 }
 </style>
 
@@ -364,6 +388,7 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
     _selectedPrintingId = printing.scryfall_id;
     if (printing.image_small) {
       document.getElementById('modal-card-image').src = printing.image_small;
+      _syncHorizontalOrientation(dlg.classList.contains('card-modal--horizontal'));
     }
     var usd  = printing.usd      != null ? '$' + parseFloat(printing.usd).toFixed(2)      : '—';
     var foil = printing.usd_foil != null ? '$' + parseFloat(printing.usd_foil).toFixed(2) : '—';
@@ -528,23 +553,45 @@ dialog.card-modal::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(
   var _flipState    = false;   // false = front, true = back
   var _frontData    = {};      // { name, type_line, oracle_text, mana_cost }
   var _backData     = {};
+  var _HORIZONTAL_LAYOUTS = { split: 1, planar: 1, scheme: 1, aftermath: 1 };
+
+  function _syncHorizontalOrientation(isHorizontal) {
+    var img = document.getElementById('modal-card-image');
+    dlg.classList.toggle('card-modal--horizontal', !!isHorizontal);
+    dlg.classList.remove('card-modal--horizontal-rotated');
+    if (!isHorizontal || !img || !img.src) return;
+
+    function applyOrientation() {
+      var shouldRotate = img.naturalWidth && img.naturalHeight && img.naturalWidth < img.naturalHeight;
+      dlg.classList.toggle('card-modal--horizontal-rotated', !!shouldRotate);
+    }
+
+    if (img.complete && img.naturalWidth) applyOrientation();
+    else img.onload = applyOrientation;
+  }
 
   /* Called by pages when opening the modal — reset flip state */
   window._cardModalResetFlip = function (card) {
     _flipState = false;
     document.getElementById('modal-flip-inner').classList.remove('flipped');
+    document.getElementById('modal-card-image-back').src = '';
+    _frontData = {
+      name:        (card && card.name) || '',
+      type_line:   (card && card.type_line) || '',
+      oracle_text: (card && card.oracle_text) || '',
+      mana_cost:   (card && card.mana_cost) || '',
+    };
+    _backData = {};
 
     var hasBack = !!(card && card.image_back);
     document.getElementById('modal-flip-btn').style.display = hasBack ? '' : 'none';
 
+    /* Horizontal card support (split, planar, scheme, aftermath) */
+    var isHorizontal = !!(card && card.layout && _HORIZONTAL_LAYOUTS[card.layout]);
+  _syncHorizontalOrientation(isHorizontal);
+
     if (hasBack) {
       document.getElementById('modal-card-image-back').src = card.image_back;
-      _frontData = {
-        name:        card.name         || '',
-        type_line:   card.type_line    || '',
-        oracle_text: card.oracle_text  || '',
-        mana_cost:   card.mana_cost    || '',
-      };
       _backData = {
         name:        card.back_name        || card.name || '',
         type_line:   card.back_type_line   || '',

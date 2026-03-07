@@ -222,6 +222,7 @@ def _inv_to_dict(inv, location: str) -> dict:
         "location":           location,
         "physical_location":  inv.physical_location or "",
         "price_direction":    inv.card.price_direction,
+        "layout":             card.layout or "",
     }
 
 

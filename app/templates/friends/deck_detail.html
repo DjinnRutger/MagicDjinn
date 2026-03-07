@@ -311,6 +311,12 @@ dialog#importDialog::backdrop { background: rgba(0,0,0,.55); }
     'purchase_price':    inv.purchase_price_usd,
     'notes':             inv.notes or '',
     'physical_location': inv.physical_location or '',
+    'image_back':        card.image_back or '',
+    'back_name':         card.back_name or '',
+    'back_type_line':    card.back_type_line or '',
+    'back_oracle_text':  card.back_oracle_text or '',
+    'back_mana_cost':    card.back_mana_cost or '',
+    'layout':            card.layout or '',
   } %}
   <div class="card-tile"
        tabindex="0"
@@ -566,6 +572,7 @@ function openDeckCardModal(tile) {
   document.getElementById('modal-notes').value             = card.notes || '';
 
   document.getElementById('modal-alert').style.display = 'none';
+  if (window._cardModalResetFlip) window._cardModalResetFlip(card);
 
   // Determine whether this card is editable
   var isMyCard   = CAN_EDIT && (card.owner_id === CURRENT_USER_ID);

@@ -300,11 +300,11 @@
 
 {# ── All-Cards read-only detail dialog ───────────────────────────────────────── #}
 <dialog id="allCardsDlg" style="max-width:min(720px,95vw);width:100%;border:none;border-radius:14px;padding:0;background:var(--bs-body-bg);color:var(--bs-body-color);box-shadow:0 24px 80px rgba(0,0,0,.55)">
-  <div style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
+  <div id="acd-body-wrap" style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
 
     {# ── Card image column ── #}
-    <div style="flex-shrink:0;width:200px">
-      <div style="position:relative">
+    <div id="acd-img-col" style="flex-shrink:0;width:200px">
+      <div id="acd-img-wrap" style="position:relative">
         <img id="acd-image" src="" alt="" style="width:100%;border-radius:10px;display:block;box-shadow:0 4px 16px rgba(0,0,0,.4)">
         <div id="acd-no-image" style="display:none;width:200px;aspect-ratio:63/88;background:var(--bs-tertiary-bg);border-radius:10px;align-items:center;justify-content:center;font-size:3rem;color:var(--bs-secondary-color)">
           <i class="bi bi-card-image"></i>
@@ -373,11 +373,11 @@
 
 {# ── Scryfall card detail dialog ──────────────────────────────────────────── #}
 <dialog id="sfDetailDlg" style="max-width:min(720px,95vw);width:100%;border:none;border-radius:14px;padding:0;background:var(--bs-body-bg);color:var(--bs-body-color);box-shadow:0 24px 80px rgba(0,0,0,.55)">
-  <div style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
+  <div id="sfd-body-wrap" style="display:flex;gap:1.5rem;padding:1.75rem;align-items:flex-start">
 
     {# ── Image column ── #}
-    <div style="flex-shrink:0;width:200px">
-      <div style="position:relative">
+    <div id="sfd-img-col" style="flex-shrink:0;width:200px">
+      <div id="sfd-img-wrap" style="position:relative">
         <img id="sfd-image" src="" alt="" style="width:100%;border-radius:10px;display:block;box-shadow:0 4px 16px rgba(0,0,0,.4)">
         <div id="sfd-no-image" style="display:none;width:200px;aspect-ratio:63/88;background:var(--bs-tertiary-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--bs-secondary-color)">
           <i class="bi bi-card-image"></i>
@@ -600,9 +600,68 @@ function showToast(msg, type = 'success') {
 const _sfdDlg   = document.getElementById('sfDetailDlg');
 let   _sfdCard  = null;
 
+const _SFD_H_LAYOUTS = { split: 1, planar: 1, scheme: 1, aftermath: 1 };
+
+function _applyImgRotation(imgEl, wrapEl, colEl, isH) {
+  function resetImageStyles() {
+    imgEl.style.position         = '';
+    imgEl.style.width            = '100%';
+    imgEl.style.height           = '';
+    imgEl.style.objectFit        = '';
+    imgEl.style.top              = '';
+    imgEl.style.left             = '';
+    imgEl.style.transform        = '';
+  }
+
+  if (isH) {
+    colEl.style.width            = 'min(100%, 320px)';
+    wrapEl.style.aspectRatio     = '88 / 63';
+    wrapEl.style.width           = '100%';
+    wrapEl.style.transformOrigin = '';
+    wrapEl.style.transform       = '';
+
+    function applyOrientation() {
+      if (imgEl.naturalWidth && imgEl.naturalHeight && imgEl.naturalWidth < imgEl.naturalHeight) {
+        imgEl.style.position   = 'absolute';
+        imgEl.style.width      = 'calc(100% * 63 / 88)';
+        imgEl.style.height     = 'calc(100% * 88 / 63)';
+        imgEl.style.objectFit  = 'contain';
+        imgEl.style.top        = '50%';
+        imgEl.style.left       = '50%';
+        imgEl.style.transform  = 'translate(-50%, -50%) rotate(90deg)';
+      } else {
+        resetImageStyles();
+        imgEl.style.height    = '100%';
+        imgEl.style.objectFit = 'contain';
+      }
+    }
+
+    if (imgEl.complete && imgEl.naturalWidth) applyOrientation();
+    else imgEl.onload = applyOrientation;
+  } else {
+    colEl.style.width            = '200px';
+    wrapEl.style.aspectRatio     = '';
+    wrapEl.style.width           = '';
+    wrapEl.style.transformOrigin = '';
+    wrapEl.style.transform       = '';
+    resetImageStyles();
+  }
+}
+
+function _setSfdHorizontal(isH) {
+  _applyImgRotation(
+    document.getElementById('sfd-image'),
+    document.getElementById('sfd-img-wrap'),
+    document.getElementById('sfd-img-col'),
+    isH
+  );
+}
+
 function _openSFDetail(card) {
   if (!card) return;
   _sfdCard = card;
+
+  _setSfdHorizontal(!!(card.layout && _SFD_H_LAYOUTS[card.layout]));
 
   const img   = document.getElementById('sfd-image');
   const noImg = document.getElementById('sfd-no-image');
@@ -967,9 +1026,20 @@ async function _loadDecks() {
   } catch { /* keep empty */ }
 }
 
+function _setAcdHorizontal(isH) {
+  _applyImgRotation(
+    document.getElementById('acd-image'),
+    document.getElementById('acd-img-wrap'),
+    document.getElementById('acd-img-col'),
+    isH
+  );
+}
+
 function _openACD(card) {
   if (!card) return;
   _acdCard = card;
+
+  _setAcdHorizontal(!!(card.layout && _SFD_H_LAYOUTS[card.layout]));
 
   const img     = document.getElementById('acd-image');
   const noImg   = document.getElementById('acd-no-image');
